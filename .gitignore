@@ -1,0 +1,6 @@
+/target
+/skills/commonplace/bin/commonplace-*
+/skills/commonplace-workspace
+/fixtures/tmp
+*.tmp~
+.DS_Store

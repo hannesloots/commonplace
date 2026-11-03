@@ -1,0 +1,18 @@
+[package]
+name = "commonplace-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "commonplace: deterministic hygiene tools for an LLM-maintained research wiki / second brain"
+
+[[bin]]
+name = "commonplace"
+path = "src/main.rs"
+
+[dependencies]
+commonplace-core = { path = "../commonplace-core" }
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true

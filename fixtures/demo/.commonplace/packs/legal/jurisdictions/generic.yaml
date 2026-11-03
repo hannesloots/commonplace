@@ -1,0 +1,25 @@
+# Fallback profile used when commonplace.toml has no `jurisdiction`. The gates
+# still work (any neutral-style citation in a draft needs a verified
+# authority page), but court codes, report series and sources are unknown.
+# Copy this file to <code>.yaml, fill it in, and set `jurisdiction = "<code>"`.
+code: generic
+name: "unspecified jurisdiction (set `jurisdiction` in commonplace.toml)"
+legal_system: unspecified
+neutral_citation_pattern: '\[\d{4}\] [A-Z][A-Za-z]{1,12} \d+'
+report_citation_pattern: '\b(?:19|20)\d{2} \(\d+\) [A-Z][A-Za-z ]{0,12} \d+\b'
+courts: [other]
+hierarchy: "unspecified: record hierarchy_rank by the court's position in its own system (1 = apex court)"
+primary_sources: "the court's own judgment site or the national free law library; the official legislation site"
+treatment_tool: "a citator or 'cases citing this case' search, then read the later judgments"
+statute_citation_hint: "cite statutes the way the jurisdiction's courts do"
+citation_examples:
+  neutral: "[2025] COURT 1"
+  report: "2025 (1) REPORT 1"
+  statute: "Act name and year"
+  section: "s 1(1)"
+  pinpoint: "numbered paragraphs where the court uses them; otherwise p. with the page marker"
+forbidden_sources_pattern: '(?i)\bfictitious citation\b'
+regulator: "the professional regulator"
+privacy_law: "the applicable data protection law"
+fabrication_note: "Courts in several jurisdictions have sanctioned practitioners for AI-fabricated citations; the verification gate exists so that cannot happen from this commonplace."
+drafting_conventions: "issues, facts, law, application, relief; numbered paragraphs"

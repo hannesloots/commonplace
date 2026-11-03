@@ -1,0 +1,26 @@
+{
+  "sources": {
+    "2022-04-25 TOGAF Business Capabilities Guide": {
+      "raw": "sources/raw/2022-04-25 TOGAF Business Capabilities Guide.html",
+      "raw_sha256": "05b244cc2511999e22c1b32b1a234532197d78e39ca7c2bd095e9fd6c4284548",
+      "text": "sources/text/2022-04-25 TOGAF Business Capabilities Guide.text.md",
+      "text_sha256": "beea334092993c8a49d29b3f50c640f19f2176228adcc12450884d61a4d77137",
+      "note": "sources/notes/2022-04-25 TOGAF Business Capabilities Guide.md",
+      "ingested": "2026-11-03T17:01:26+11:00",
+      "converter": "htmd",
+      "origin": null
+    },
+    "2025-01-08 Mavundla v MEC": {
+      "raw": "sources/raw/2025-01-08 Mavundla v MEC.md",
+      "raw_sha256": "f7823bab97ad65e34a4fb6d46e212b28381d34e5d44968f3d5ebb705c6dbf19c",
+      "text": "sources/text/2025-01-08 Mavundla v MEC.text.md",
+      "text_sha256": "591395564080e823bad7f8925463863c10d4b98717126512d9bb4d0f229631ef",
+      "note": "sources/notes/2025-01-08 Mavundla v MEC.md",
+      "ingested": "2026-11-03T17:01:26+11:00",
+      "converter": "copy",
+      "origin": "https://www.saflii.org/za/cases/ZAKZPHC/2025/2.html"
+    }
+  },
+  "last_lint": "2026-11-03T17:01:26+11:00",
+  "last_index": "2026-11-03T17:01:26+11:00"
+}

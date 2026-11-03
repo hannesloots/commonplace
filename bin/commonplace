@@ -1,0 +1,3 @@
+#!/bin/sh
+# Plugin-level entry point (on PATH while the plugin is enabled). Delegates to the skill launcher.
+exec "$(dirname "$0")/../skills/commonplace/scripts/commonplace" "$@"

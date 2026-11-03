@@ -1,0 +1,38 @@
+schema_version = 1
+name = "Demo Commonplace"
+purpose = "Fixture commonplace for tests: a legal concept and a small enterprise architecture slice."
+packs = [
+    "ea",
+    "legal",
+]
+jurisdiction = "za"
+
+[index]
+hub_threshold = 60
+max_index_lines = 200
+
+[lint]
+stale_days = 180
+retired_terms = []
+disabled_rules = []
+max_words = 2500
+quote_min_words = 3
+quote_max_words = 80
+
+[converters]
+prefer = [
+    "docling",
+    "marker",
+    "markitdown",
+    "pandoc",
+    "pdftotext",
+]
+
+[privacy]
+exclude_from_export = [
+    "privileged",
+    "confidential",
+]
+
+[review]
+context_lines = 3

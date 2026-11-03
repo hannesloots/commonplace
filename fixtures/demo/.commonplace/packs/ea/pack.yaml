@@ -1,0 +1,187 @@
+name: ea
+version: 2
+description: >
+  Enterprise architecture, capability-based planning (vision, business,
+  information and technology architecture, gaps, roadmap; aligned with the
+  TOGAF® ADM but framework-neutral): drivers and goals,
+  stakeholders, use cases, value streams, business capabilities with baseline
+  and target maturity, architecture and solution building blocks, gaps, work
+  packages and roadmap. Lint rules enforce the traceability chain
+  use case → capability → ABB → SBB/work package.
+
+folders:
+  - projects/<engagement>/architecture
+
+types:
+  driver:
+    description: External or internal condition that motivates change
+    folder_hint: projects/<engagement>/architecture/motivation
+    required: [description]
+    cited: true
+  goal:
+    description: Measurable outcome a driver demands
+    folder_hint: projects/<engagement>/architecture/motivation
+    required: [description]
+    links:
+      driven_by: { to: [driver], min: 1, severity: warning, description: "goal responds to a driver" }
+    cited: true
+  stakeholder:
+    description: Person or group with concerns about the architecture
+    folder_hint: projects/<engagement>/architecture/motivation
+    required: [description, concerns]
+  principle:
+    description: Architecture principle (name, statement, rationale, implications)
+    folder_hint: projects/<engagement>/architecture/motivation
+    required: [description]
+    cited: true
+  requirement:
+    description: Statement the architecture must satisfy
+    folder_hint: projects/<engagement>/architecture/requirements
+    required: [description, priority]
+    enums:
+      priority: [must, should, could, wont]
+    cited: true
+  use-case:
+    description: What an actor needs to achieve
+    folder_hint: projects/<engagement>/architecture/business
+    required: [description, actor]
+    links:
+      enabled_by: { to: [capability], min: 1, description: "every use case needs at least one enabling capability" }
+      value_stream: { to: [value-stream], min: 0 }
+    cited: true
+  value-stream:
+    description: End-to-end set of value-adding stages
+    folder_hint: projects/<engagement>/architecture/business
+    required: [description]
+    links:
+      enabled_by: { to: [capability], min: 1, severity: warning }
+  capability:
+    description: What the business does (noun phrase), with baseline and target maturity 1–5
+    folder_hint: projects/<engagement>/architecture/business
+    required: [description, level, baseline_maturity, target_maturity]
+    enums:
+      level: ["1", "2", "3"]
+      baseline_maturity: ["0", "1", "2", "3", "4", "5"]
+      target_maturity: ["0", "1", "2", "3", "4", "5"]
+      heat: [none, low, medium, high]
+    links:
+      parent: { to: [capability], min: 0 }
+      realised_by: { to: [abb], min: 0 }
+    cited: true
+  abb:
+    description: Architecture Building Block (vendor-neutral function or component)
+    folder_hint: projects/<engagement>/architecture/building-blocks
+    required: [description, domain, state]
+    enums:
+      domain: [business, data, application, technology]
+      state: [baseline, target, both]
+    links:
+      implemented_by: { to: [sbb], min: 0 }
+      satisfies: { to: [requirement, principle], min: 0 }
+    cited: true
+  sbb:
+    description: Solution Building Block (product, service or system that implements an ABB)
+    folder_hint: projects/<engagement>/architecture/building-blocks
+    required: [description, vendor, lifecycle]
+    enums:
+      lifecycle: [candidate, selected, in-use, retiring, retired]
+    links:
+      implements: { to: [abb], min: 1 }
+    cited: true
+  gap:
+    description: Difference between baseline and target for a capability or ABB
+    folder_hint: projects/<engagement>/architecture/gaps
+    required: [description, subject, gap_type]
+    enums:
+      gap_type: [new, enhance, retire, replace, carry-forward]
+    links:
+      subject: { to: [capability, abb], min: 1 }
+      closed_by: { to: [work-package], min: 0, severity: warning }
+  work-package:
+    description: Unit of change on the roadmap that closes gaps
+    folder_hint: projects/<engagement>/architecture/roadmap
+    required: [description, horizon]
+    enums:
+      horizon: [now, next, later]
+    links:
+      closes: { to: [gap], min: 1 }
+  deliverable:
+    description: ADM deliverable (Architecture Vision, Target Architecture, Roadmap)
+    folder_hint: projects/<engagement>/architecture
+    required: [description, phase]
+    enums:
+      phase: [preliminary, A, B, C, D, E, F, G, H]
+    cited: true
+
+rules:
+  - id: EA-001
+    severity: error
+    when: { type: use-case }
+    check: link_field
+    field: enabled_by
+    to: [capability]
+    min: 1
+    message: use case has no enabling capability (capability-based planning requires the mapping)
+  - id: EA-002
+    severity: warning
+    when: { type: capability, status_not: [superseded] }
+    check: field_compare
+    field: target_maturity
+    op: ">="
+    other: baseline_maturity
+    message: target maturity is below baseline; if the capability is being retired, say so in a gap page
+  - id: EA-003
+    severity: warning
+    when: { type: capability }
+    check: link_field
+    field: realised_by
+    to: [abb]
+    min: 1
+    message: capability with no ABB; a capability in scope needs at least one architecture building block, or an explicit gap
+  - id: EA-004
+    severity: error
+    when: { type: sbb }
+    check: link_field
+    field: implements
+    to: [abb]
+    min: 1
+    message: SBB must implement at least one ABB
+  - id: EA-005
+    severity: warning
+    when: { type: abb }
+    check: link_field
+    field: satisfies
+    to: [requirement, principle]
+    min: 1
+    message: ABB does not trace to any requirement or principle
+  - id: EA-006
+    severity: warning
+    when: { type: gap }
+    check: link_field
+    field: closed_by
+    to: [work-package]
+    min: 1
+    message: gap not closed by any work package on the roadmap
+  - id: EA-007
+    severity: warning
+    when: { type: deliverable }
+    check: require_regex
+    pattern: "(?m)^## (Stakeholders|Scope|Capabilities|Gaps|Roadmap|Risks)"
+    message: deliverable is missing standard sections (see the pack workflow)
+
+traces:
+  - name: use-case-to-capability
+    description: Which capabilities enable which use cases, with gaps
+    chain: [use-case, enabled_by, capability]
+  - name: capability-to-sbb
+    description: Capability → ABB → SBB realisation chain
+    chain: [capability, realised_by, abb, implemented_by, sbb]
+  - name: gap-to-roadmap
+    description: Gaps and the work packages that close them
+    chain: [gap, closed_by, work-package]
+  - name: requirement-coverage
+    description: Which ABBs satisfy which requirements
+    chain: [requirement, satisfies, abb]
+
+personas: [chief-architect, steering-committee]
+workflows: [workflow.md]

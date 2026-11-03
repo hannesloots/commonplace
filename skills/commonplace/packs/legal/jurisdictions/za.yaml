@@ -1,0 +1,27 @@
+# Jurisdiction profile: South Africa. Loaded into the legal pack when
+# commonplace.toml says `jurisdiction = "za"`. Values replace {{jurisdiction.*}}
+# placeholders in pack.yaml; the workflow and personas read this file too.
+code: za
+name: South Africa
+legal_system: mixed Roman-Dutch and English common law, under the Constitution of 1996
+# Any neutral citation in a draft needs a verified authority page (LEG-001).
+neutral_citation_pattern: '\[\d{4}\] [A-Z][A-Za-z]{1,12} \d+'
+# Reported citations: 2025 (3) SA 534 (KZP), 2019 (1) BCLR 1, [2020] 4 All SA 1
+report_citation_pattern: '(?:\b(?:19|20)\d{2} \(\d+\) (?:SA|BCLR|SACR|BLLR|ILJ|SATC|JDR) \d+\b|\[(?:19|20)\d{2}\] \d+ All SA \d+)'
+courts: [ZACC, ZASCA, ZALAC, ZALC, ZAGPJHC, ZAGPPHC, ZAWCHC, ZAKZDHC, ZAKZPHC, ZAECGHC, ZAECPEHC, ZAECMKHC, ZAFSHC, ZANWHC, ZALMPPHC, ZAMPMBHC, ZANCHC, ZACT, ZACAC, ZAEC, other]
+hierarchy: "1 Constitutional Court (ZACC) · 2 Supreme Court of Appeal (ZASCA) · 3 High Court full bench / Labour Appeal Court · 4 High Court / Labour Court · 5 Magistrates' Courts, tribunals"
+primary_sources: "SAFLII (saflii.org) for judgments; Government Gazette or the official consolidated Act for legislation"
+treatment_tool: "SAFLII noteup (cases citing this case), then read the later judgments"
+statute_citation_hint: "for statutes use the Act number, e.g. Act 131 of 1998"
+citation_examples:
+  neutral: "[2025] ZAKZPHC 2"
+  report: "2025 (3) SA 534 (KZP)"
+  statute: "Act 131 of 1998"
+  section: "s 29(1)(a)"
+  pinpoint: "para 26 for modern judgments; at 534E for older reports (cite p. with the page marker)"
+# Secondary tools whose citations must never be relied on without checking the primary text.
+forbidden_sources_pattern: '(?i)\b(?:Legal Genius|fictitious citation)\b'
+regulator: "Legal Practice Council"
+privacy_law: "POPIA (Protection of Personal Information Act 4 of 2013)"
+fabrication_note: "South African courts have referred practitioners to the Legal Practice Council for AI-fabricated citations (Mavundla v MEC [2025] ZAKZPHC 2 is the standard example)."
+drafting_conventions: "Heads of argument: issues, facts, law, application, relief; numbered paragraphs; cite both neutral and reported forms where a report exists."

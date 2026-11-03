@@ -1,0 +1,23 @@
+# Jurisdiction profile: England and Wales.
+code: en
+name: England and Wales
+legal_system: common law; Senior Courts and the UK Supreme Court
+neutral_citation_pattern: '\[\d{4}\] [A-Z][A-Za-z]{1,12} \d+'
+# Reported citations: [2012] 1 AC 1, [2001] 2 All ER 1, [2010] 1 WLR 1
+report_citation_pattern: '\[(?:19|20)\d{2}\] (?:\d+ )?(?:AC|QB|KB|Ch|Fam|WLR|All ER|Cr App R|BCLC|BCC|ICR|IRLR|EHRR|FSR|RPC|Lloyd''s Rep) \d+\b'
+courts: [UKSC, UKPC, UKHL, EWCA, EWHC, EWCOP, EWFC, EWCC, UKUT, UKFTT, EAT, other]
+hierarchy: "1 UK Supreme Court (UKSC) / Privy Council · 2 Court of Appeal (EWCA Civ / Crim) · 3 High Court (EWHC, with division) · 4 County Court, Crown Court, Upper Tribunal · 5 Magistrates, First-tier Tribunal"
+primary_sources: "BAILII (bailii.org) and The National Archives Find Case Law (caselaw.nationalarchives.gov.uk) for judgments; legislation.gov.uk for Acts and statutory instruments"
+treatment_tool: "BAILII 'cited by' / ICLR citator, then read the later judgments"
+statute_citation_hint: "for statutes use the short title and year, e.g. Data Protection Act 2018"
+citation_examples:
+  neutral: "[2024] UKSC 12; [2023] EWHC 123 (Ch)"
+  report: "[2012] 1 AC 1"
+  statute: "Data Protection Act 2018"
+  section: "s 3(1)(a)"
+  pinpoint: "[26] (numbered paragraphs); page pinpoints for older reports"
+forbidden_sources_pattern: '(?i)\bfictitious citation\b'
+regulator: "Solicitors Regulation Authority / Bar Standards Board"
+privacy_law: "UK GDPR and the Data Protection Act 2018"
+fabrication_note: "The Divisional Court warned practitioners about AI-fabricated citations and referred them to regulators in Ayinde v London Borough of Haringey [2025] EWHC 1383 (Admin)."
+drafting_conventions: "Skeleton arguments: issues, facts, law, application, relief; numbered paragraphs; neutral citation plus the law report where one exists."

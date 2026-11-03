@@ -1,0 +1,145 @@
+name: legal
+version: 2
+description: >
+  Legal matters in any adversarial system: matter files, parties, chronology,
+  issues, evidence map, authorities (cases, statutes, regulations) and
+  arguments. Hard rule: no authority may be cited in a draft unless an
+  authority page exists with verified: true and the judgment or statute is in
+  sources/raw. Country specifics (citation formats, court codes, primary
+  sources, regulator) come from jurisdictions/<code>.yaml, chosen by
+  `jurisdiction` in commonplace.toml (za, au, en, or your own).
+
+folders:
+  - projects/<matter>/authorities
+  - projects/<matter>/evidence
+  - projects/<matter>/drafts
+
+types:
+  matter:
+    description: "The matter page: parties, court, case number, stage, deadlines"
+    folder_hint: projects/<matter>
+    required: [description, court, case_number, stage, client_role]
+    enums:
+      stage: [intake, pleadings, discovery, trial-prep, hearing, judgment, appeal, closed]
+      client_role: [applicant, respondent, plaintiff, defendant, appellant, accused, claimant, advisory, other]
+    status: [active, paused, done, archived]
+  party:
+    description: A party, witness or other person in the matter
+    folder_hint: projects/<matter>/parties
+    required: [description, role]
+    enums:
+      role: [applicant, respondent, plaintiff, defendant, claimant, witness, expert, judge, counsel, attorney, solicitor, other]
+  issue:
+    description: A legal or factual issue to be decided, with its elements
+    folder_hint: projects/<matter>/issues
+    required: [description, issue_type]
+    enums:
+      issue_type: [factual, legal, mixed, procedural]
+    cited: true
+  chronology-event:
+    description: One dated event, sourced to an exhibit span
+    folder_hint: projects/<matter>/chronology
+    required: [description, date]
+    cited: true
+  evidence:
+    description: An exhibit or document and what it proves
+    folder_hint: projects/<matter>/evidence
+    required: [description, exhibit_ref]
+    links:
+      proves: { to: [issue, chronology-event], min: 0 }
+    cited: true
+  authority:
+    description: A case, statute, regulation or textbook, with verified citation
+    folder_hint: projects/<matter>/authorities
+    required: [description, kind, verified]
+    enums:
+      kind: [case, constitution, statute, regulation, rule, textbook, article, other]
+      treatment: [followed, applied, distinguished, doubted, overruled, unknown, n/a]
+      court: ["{{jurisdiction.courts}}"]
+    cited: true
+  argument:
+    description: A proposition in the case theory, with supporting authorities and evidence
+    folder_hint: projects/<matter>/arguments
+    required: [description]
+    links:
+      supported_by: { to: [authority, evidence, chronology-event], min: 1, severity: warning }
+      addresses: { to: [issue], min: 1 }
+    cited: true
+  draft:
+    description: Heads of argument, opinion, letter, affidavit or other document under drafting
+    folder_hint: projects/<matter>/drafts
+    required: [description, draft_type]
+    enums:
+      draft_type: [heads, skeleton, submissions, opinion, memo, letter, affidavit, witness-statement, notice, pleading, other]
+    cited: true
+
+rules:
+  - id: LEG-001
+    severity: error
+    when: { folder: "projects/*/drafts/**" }
+    check: body_regex_requires_page
+    pattern: "{{jurisdiction.neutral_citation_pattern}}"
+    page_type: authority
+    page_field: neutral_citation
+    page_must: { verified: "true" }
+    message: "neutral citation in a draft has no verified authority page (verify on {{jurisdiction.primary_sources}}, ingest the judgment, set verified true)"
+  - id: LEG-002
+    severity: error
+    when: { folder: "projects/*/drafts/**" }
+    check: body_regex_requires_page
+    pattern: "{{jurisdiction.report_citation_pattern}}"
+    page_type: authority
+    page_field: report_citation
+    page_must: { verified: "true" }
+    message: law-report citation in a draft has no verified authority page
+  - id: LEG-003
+    severity: error
+    when: { type: authority, status_not: [superseded] }
+    check: required
+    fields: [neutral_citation]
+    message: "authority has no neutral citation ({{jurisdiction.statute_citation_hint}})"
+  - id: LEG-004
+    severity: warning
+    when: { type: authority }
+    check: enum
+    field: treatment
+    values: [followed, applied, distinguished, doubted, overruled, unknown, n/a]
+    message: "record subsequent treatment of the authority ({{jurisdiction.treatment_tool}})"
+  - id: LEG-005
+    severity: error
+    when: { type: chronology-event }
+    check: require_regex
+    pattern: '\[\^[A-Za-z0-9_\-]+\]'
+    message: chronology event without a citation to an exhibit or affidavit span
+  - id: LEG-006
+    severity: warning
+    when: { type: argument }
+    check: link_field
+    field: supported_by
+    to: [authority, evidence, chronology-event]
+    min: 1
+    message: argument has no supporting authority or evidence
+  - id: LEG-007
+    severity: error
+    when: { folder: "projects/**" }
+    check: forbid_regex
+    pattern: "{{jurisdiction.forbidden_sources_pattern}}"
+    message: "never rely on secondary AI tools' citations; verify on {{jurisdiction.primary_sources}}"
+  - id: LEG-008
+    severity: warning
+    when: { type: matter }
+    check: enum
+    field: confidentiality
+    values: [privileged, confidential]
+    message: a matter page must be privileged or confidential
+
+traces:
+  - name: issue-to-authority
+    description: Issues → arguments → authorities/evidence
+    chain: [issue, addresses, argument, supported_by, authority]
+  - name: argument-support
+    description: Arguments and what supports them
+    chain: [argument, supported_by, evidence]
+
+personas: [opposing-counsel, senior-counsel]
+workflows: [workflow.md]

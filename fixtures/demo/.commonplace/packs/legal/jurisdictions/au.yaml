@@ -1,0 +1,23 @@
+# Jurisdiction profile: Australia (Commonwealth, states and territories).
+code: au
+name: Australia
+legal_system: common law; federal and state courts; Australian Constitution
+neutral_citation_pattern: '\[\d{4}\] [A-Z][A-Za-z]{1,12} \d+'
+# Reported citations: (2012) 250 CLR 1, (2019) 93 ALJR 1, (2020) 102 NSWLR 1
+report_citation_pattern: '\((?:19|20)\d{2}\) \d+ (?:CLR|ALR|ALJR|FCR|NSWLR|VR|Qd R|WAR|SASR|Tas R|ACTLR|NTLR|FLR|IR|FamLR|A Crim R) \d+\b'
+courts: [HCA, FCAFC, FCA, FedCFamC1A, FedCFamC1F, FedCFamC2F, FedCFamC2G, NSWCA, NSWCCA, NSWSC, NSWDC, NSWLEC, VSCA, VSC, VCC, QCA, QSC, QDC, WASCA, WASC, WADC, SASCA, SASC, SADC, TASCCA, TASSC, ACTCA, ACTSC, NTCA, NTSC, AATA, ARTA, FWC, FWCFB, other]
+hierarchy: "1 High Court of Australia (HCA) · 2 Full Federal Court / state Courts of Appeal · 3 Federal Court / state Supreme Courts · 4 District/County Courts, Federal Circuit and Family Court · 5 Magistrates/Local Courts, tribunals"
+primary_sources: "AustLII (austlii.edu.au) and the courts' own judgment sites; Federal Register of Legislation (legislation.gov.au) and state legislation sites for Acts"
+treatment_tool: "AustLII LawCite (cases citing this case), then read the later judgments"
+statute_citation_hint: "for statutes use the short title, year and jurisdiction, e.g. Privacy Act 1988 (Cth)"
+citation_examples:
+  neutral: "[2023] HCA 5"
+  report: "(2012) 250 CLR 1"
+  statute: "Privacy Act 1988 (Cth)"
+  section: "s 13(1)(a)"
+  pinpoint: "[26] (numbered paragraphs); page pinpoints for older reports"
+forbidden_sources_pattern: '(?i)\bfictitious citation\b'
+regulator: "the state or territory Legal Services Commissioner / Law Society / Bar Association"
+privacy_law: "Privacy Act 1988 (Cth) and state equivalents"
+fabrication_note: "Australian courts have referred practitioners to regulators for AI-fabricated citations (for example Valu v Minister for Immigration and Multicultural Affairs (No 2) [2025] FedCFamC2G 95)."
+drafting_conventions: "Submissions: issues, facts, law, application, orders sought; numbered paragraphs; medium-neutral citation plus the authorised report where one exists."

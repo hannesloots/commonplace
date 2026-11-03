@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: ea-trace
+expected_outcome: |
+  A commonplace with the ea pack enabled. A project page for Claims Modernisation. Two use-case pages with actors and `enabled_by` links to capability
+  pages; capability pages with level, baseline_maturity and target_maturity and `realised_by` links to abb pages; abb pages with domain/state.
+  The agent ran `commonplace trace --name use-case-to-capability` and `commonplace trace --name capability-to-sbb` and reported the tables and the gaps
+  (— cells, e.g. no SBB yet). `commonplace lint` ends with zero errors (warnings such as EA-003/EA-005 may remain but are reported).

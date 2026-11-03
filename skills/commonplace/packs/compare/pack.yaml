@@ -1,0 +1,62 @@
+name: compare
+version: 1
+description: >
+  Structured comparisons (medical schemes, insurance, products, vendors):
+  options with cited attribute values for a specific year, a needs profile,
+  scenarios costed against each option, and a generated comparison matrix.
+  Freshness rules keep year-bound values from going stale.
+
+types:
+  option:
+    description: One option (scheme + plan, product, vendor) for one year
+    folder_hint: projects/<comparison>/options
+    required: [description, provider, year]
+    enums:
+      verification: [unverified, brochure, regulator, provider-confirmed]
+    cited: true
+  needs-profile:
+    description: Who the comparison is for and what matters to them
+    folder_hint: projects/<comparison>
+    required: [description]
+  scenario:
+    description: A concrete situation to cost against each option
+    folder_hint: projects/<comparison>/scenarios
+    required: [description]
+    cited: true
+  comparison:
+    description: The comparison deliverable with the generated matrix
+    folder_hint: projects/<comparison>
+    required: [description, year, criteria]
+    cited: true
+
+rules:
+  - id: CMP-001
+    severity: warning
+    when: { type: option, status_not: [superseded] }
+    check: stale_year
+    field: year
+    years_back: 0
+    message: option is for a previous year; values change annually, ingest the current brochure and supersede this page
+  - id: CMP-002
+    severity: warning
+    when: { type: option }
+    check: enum
+    field: verification
+    values: [brochure, regulator, provider-confirmed]
+    message: option values not verified against the provider's own document or the regulator
+  - id: CMP-003
+    severity: warning
+    when: { type: scenario }
+    check: require_regex
+    pattern: '\[\^[A-Za-z0-9_\-]+\]'
+    message: scenario costs must cite the benefit rules they use
+  - id: CMP-004
+    severity: info
+    when: { type: comparison }
+    check: require_regex
+    pattern: "(?i)not (financial|medical|legal) advice"
+    message: add the standard disclaimer line to the comparison deliverable
+
+traces: []
+personas: [broker, sceptical-buyer]
+workflows: [workflow.md]

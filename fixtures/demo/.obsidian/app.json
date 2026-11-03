@@ -1,0 +1,9 @@
+{
+  "userIgnoreFilters": [
+    "sources/raw/",
+    "sources/text/"
+  ],
+  "useMarkdownLinks": false,
+  "newLinkFormat": "shortest",
+  "showUnsupportedFiles": false
+}

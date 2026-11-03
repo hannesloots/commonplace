@@ -1,0 +1,112 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace
+      - name: fixture commonplace lints clean
+        run: |
+          cargo build
+          ./target/debug/commonplace --root fixtures/demo lint --fail-on error
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, zig: false }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-musl, zig: true }
+          - { os: macos-latest, target: aarch64-apple-darwin, zig: false }
+          - { os: macos-latest, target: x86_64-apple-darwin, zig: false }   # cross-compiled on the arm64 runner; macos-13 is retired
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, zig: false }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - if: matrix.zig
+        run: pip install cargo-zigbuild && pip install ziglang
+      - name: build
+        shell: bash
+        run: |
+          if [ "${{ matrix.zig }}" = "true" ]; then
+            cargo zigbuild --release --target ${{ matrix.target }} -p commonplace-cli
+          else
+            cargo build --release --target ${{ matrix.target }} -p commonplace-cli
+          fi
+          mkdir -p dist
+          ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
+          cp target/${{ matrix.target }}/release/commonplace$ext dist/commonplace-${{ matrix.target }}$ext
+      - uses: actions/attest-build-provenance@v2
+        # attestations are not available on user-owned private repositories
+        if: ${{ !github.event.repository.private }}
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: commonplace-${{ matrix.target }}
+          path: dist/*
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: assemble skill bundles
+        run: |
+          mkdir -p skills/commonplace/bin
+          cp artifacts/*/commonplace-* skills/commonplace/bin/
+          chmod +x skills/commonplace/bin/* skills/commonplace/scripts/commonplace bin/commonplace hooks/stop-lint.sh
+          (cd skills/commonplace/bin && sha256sum * > SHA256SUMS)
+          # cloud bundle: linux x86_64 only (claude.ai / API sandbox, < 30 MB)
+          mkdir -p out/cloud && cp -r skills/commonplace out/cloud/commonplace && rm -f out/cloud/commonplace/bin/commonplace-*apple* out/cloud/commonplace/bin/*windows* out/cloud/commonplace/bin/*aarch64*
+          (cd out/cloud && zip -qr ../commonplace-skill-cloud.zip commonplace)
+          # desktop bundle: all targets
+          (cd skills && zip -qr ../out/commonplace-skill-desktop.zip commonplace)
+          # plugin bundle: whole repo minus rust build
+          zip -qr out/commonplace-plugin.zip .claude-plugin skills bin hooks README.md LICENSE
+          ls -la out
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/commonplace-skill-cloud.zip
+            out/commonplace-skill-desktop.zip
+            out/commonplace-plugin.zip
+            artifacts/*/commonplace-*
+            skills/commonplace/bin/SHA256SUMS
+      - name: publish the built plugin to the shelf marketplace (hannesloots/shelf)
+        env:
+          DEPLOY_KEY: ${{ secrets.MARKETPLACE_DEPLOY_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh && printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/marketplace && chmod 600 ~/.ssh/marketplace
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/marketplace -o IdentitiesOnly=yes"
+          git clone --depth 1 git@github.com:hannesloots/shelf.git mkt
+          rm -rf mkt/plugins/commonplace && mkdir -p mkt/plugins/commonplace
+          (cd mkt/plugins/commonplace && unzip -q "$GITHUB_WORKSPACE/out/commonplace-plugin.zip" && rm -f .claude-plugin/marketplace.json)
+          VERSION="${GITHUB_REF_NAME#v}"
+          jq --arg v "$VERSION" '(.plugins[] | select(.name == "commonplace") | .version) = $v' mkt/.claude-plugin/marketplace.json > mkt/.claude-plugin/marketplace.json.new
+          mv mkt/.claude-plugin/marketplace.json.new mkt/.claude-plugin/marketplace.json
+          cd mkt
+          git config user.name "commonplace release"
+          git config user.email "release@users.noreply.github.com"
+          git add -A
+          git commit -m "commonplace $VERSION" || echo "nothing to publish"
+          git push

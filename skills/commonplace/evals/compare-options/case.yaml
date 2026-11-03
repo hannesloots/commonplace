@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: compare-options
+expected_outcome: |
+  A commonplace with the compare pack. Both guides ingested as sources (status summarised). Two option pages (year 2026) whose frontmatter carries
+  contribution and benefit values, each value cited in the body with a footnote to the guide and a verbatim quote. A needs-profile page.
+  A scenario page costing 4 GP visits and a 2-day admission under each option with the rules cited. A comparison page with a matrix produced by
+  `commonplace query` and a recommendation that names what would change it, plus the not-financial-advice line. `commonplace cite verify` passes; lint has
+  zero errors. The final message says what could not be verified (e.g. actual hospital cost per day is not in the guides).
+context:
+  scaffold_script: place-files.sh

@@ -1,0 +1,5 @@
+# commonplace
+.commonplace/cache/
+*.tmp~
+.obsidian/workspace*.json
+.DS_Store

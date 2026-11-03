@@ -1,0 +1,9 @@
+{
+  "name": "commonplace",
+  "version": "0.5.1",
+  "description": "Cited markdown research wiki and second brain maintained by Claude: immutable sources, page-anchored text layers, verbatim-quote citations verified by a Rust tool, PARA organisation, persona reviews, packs for TOGAF, SA legal, comparisons and study.",
+  "author": { "name": "Commonplace contributors" },
+  "repository": "https://github.com/hannesloots/commonplace",
+  "license": "MIT",
+  "keywords": ["wiki", "second-brain", "research", "citations", "obsidian", "enterprise-architecture", "legal", "pkm"]
+}

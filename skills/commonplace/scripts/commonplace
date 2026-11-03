@@ -1,0 +1,45 @@
+#!/bin/sh
+# commonplace launcher: picks the prebuilt binary for this OS/CPU and execs it.
+# Looks in <skill>/bin/, then <plugin-root>/bin/targets/, then $COMMONPLACE_BIN, then PATH.
+set -e
+here="$(cd "$(dirname "$0")" && pwd)"
+skill="$(cd "$here/.." && pwd)"
+export COMMONPLACE_SKILL_DIR="$skill"
+
+os="$(uname -s 2>/dev/null || echo unknown)"
+arch="$(uname -m 2>/dev/null || echo unknown)"
+case "$os" in
+  Linux)  os_t="unknown-linux-musl" ;;
+  Darwin) os_t="apple-darwin" ;;
+  MINGW*|MSYS*|CYGWIN*) os_t="pc-windows-msvc" ;;
+  *) os_t="unknown" ;;
+esac
+case "$arch" in
+  x86_64|amd64) arch_t="x86_64" ;;
+  aarch64|arm64) arch_t="aarch64" ;;
+  *) arch_t="$arch" ;;
+esac
+target="${arch_t}-${os_t}"
+ext=""; [ "$os_t" = "pc-windows-msvc" ] && ext=".exe"
+
+candidates="$skill/bin/commonplace-$target$ext $skill/../../bin/targets/commonplace-$target$ext"
+[ -n "$COMMONPLACE_BIN" ] && candidates="$COMMONPLACE_BIN $candidates"
+[ -n "$BRAIN_BIN" ] && candidates="$BRAIN_BIN $candidates"
+for bin in $candidates; do
+  if [ -f "$bin" ]; then
+    if [ ! -x "$bin" ]; then
+      chmod +x "$bin" 2>/dev/null || {
+        tmp="${TMPDIR:-/tmp}/commonplace-$target$ext"
+        cp "$bin" "$tmp" && chmod +x "$tmp" && bin="$tmp"
+      }
+    fi
+    exec "$bin" "$@"
+  fi
+done
+if command -v commonplace >/dev/null 2>&1; then
+  exec commonplace "$@"
+fi
+echo "commonplace: no binary for $target in $skill/bin/." >&2
+echo "Build one with 'cargo build --release --target $target' in the dev repo, or download a release," >&2
+echo "or follow manual mode in $skill/references/cli.md." >&2
+exit 127

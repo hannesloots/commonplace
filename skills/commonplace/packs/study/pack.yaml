@@ -1,0 +1,75 @@
+name: study
+version: 1
+description: >
+  Courses, certifications and study: course and module pages distilled into
+  concept pages and playbooks, flashcards for active recall, exam tracking.
+  The point is that what the user learns becomes capability for both the user
+  and the agent: concepts become citable knowledge, procedures become playbooks.
+
+types:
+  course:
+    description: A course, book-as-course or certification syllabus
+    folder_hint: areas/learning/<course>
+    required: [description, provider, status]
+    status: [planned, in-progress, done, abandoned]
+    enums:
+      format: [video, book, live, self-paced, bootcamp, other]
+  module:
+    description: One module, chapter or lecture of a course
+    folder_hint: areas/learning/<course>/modules
+    required: [description, course, status]
+    status: [todo, in-progress, done]
+    links:
+      course: { to: [course], min: 1 }
+      concepts: { to: [concept, playbook], min: 0, description: "what this module taught" }
+    cited: true
+  certificate:
+    description: A certification target or achievement
+    folder_hint: areas/learning
+    required: [description, issuer, status]
+    status: [target, scheduled, passed, failed, expired]
+  flashcard:
+    description: One question–answer pair for active recall, tied to a concept
+    folder_hint: areas/learning/<course>/flashcards
+    required: [description, question, answer, concept]
+    links:
+      concept: { to: [concept, playbook], min: 1 }
+    cited: true
+  exam:
+    description: An exam, mock or assessment attempt
+    folder_hint: areas/learning/<course>
+    required: [description, date, result]
+    links:
+      certificate: { to: [certificate], min: 0 }
+
+rules:
+  - id: STU-001
+    severity: warning
+    when: { type: module, status_not: [todo] }
+    check: link_field
+    field: concepts
+    to: [concept, playbook]
+    min: 1
+    message: a completed or in-progress module should have produced at least one concept or playbook page (that is how learning compounds)
+  - id: STU-002
+    severity: info
+    when: { type: course, status_not: [planned, abandoned] }
+    check: require_regex
+    pattern: "(?m)^## Learning outcomes"
+    message: list the learning outcomes so modules can be checked against them
+  - id: STU-003
+    severity: warning
+    when: { type: flashcard }
+    check: link_field
+    field: concept
+    to: [concept, playbook]
+    min: 1
+    message: flashcard must point at the concept it tests
+
+traces:
+  - name: course-to-concepts
+    description: Course → modules → concepts learned
+    chain: [course, course, module, concepts, concept]
+
+personas: [examiner]
+workflows: [workflow.md]

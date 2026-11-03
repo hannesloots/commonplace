@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: ingest-and-cite
+expected_outcome: |
+  A commonplace is initialised with `commonplace init` (commonplace.toml, AGENTS.md, sources/, resources/ exist). The extract is registered with `commonplace ingest`
+  (copy in sources/raw, text layer in sources/text, note in sources/notes with id "2025-01-08 ..."). The source note has a TL;DR, summary and
+  key quotes and status summarised or integrated. A concept page exists in resources/concepts with a claim-style title, tags, description,
+  sources, and at least one footnote citation of the form `[^n]: [[2025-01-08 ...]] para 27 "verbatim words"` whose quote is verbatim from
+  paragraph 27 (or 26). `commonplace cite verify` and `commonplace lint` report zero errors at the end, and the agent reports the lint result honestly.
+context:
+  scaffold_script: place-files.sh

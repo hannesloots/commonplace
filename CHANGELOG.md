@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 — 2026-11-03
+
+- First release from the published history: author and copyright are
+  "Commonplace contributors"; the marketplace is `shelf`
+  (hannesloots/shelf, install `commonplace@shelf`).
+
 ## 0.5.1 — 2026-11-03
 
 - Releases publish the built plugin (with binaries) into the marketplace

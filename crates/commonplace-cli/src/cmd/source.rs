@@ -2,7 +2,8 @@
 
 use super::{Ctx, print_json};
 use crate::cli::{IngestArgs, SourceCmd};
-use anyhow::{Result, anyhow, bail};
+use anyhow::Result;
+use commonplace_core::Error;
 use commonplace_core::{cite, config, manifest::Manifest, sources, vault::Vault};
 use serde::Serialize;
 use std::path::Path;
@@ -11,7 +12,7 @@ pub(crate) fn ingest(ctx: &Ctx, a: IngestArgs) -> Result<i32> {
     let root = ctx.find_root()?;
     let cfg = config::Config::load(&root)?;
     if a.files.is_empty() {
-        bail!("give at least one file");
+        return Err(Error::invalid_input("give at least one file").into());
     }
     let opts = sources::IngestOptions {
         // a title only makes sense for a single file
@@ -144,12 +145,12 @@ fn relink(ctx: &Ctx, root: &Path, id: Option<String>, all: bool) -> Result<i32> 
         // a BTreeMap: keys come out sorted
         Manifest::load(root)?.sources.into_keys().collect()
     } else {
-        vec![id.ok_or_else(|| anyhow!("give a source id or --all"))?]
+        vec![id.ok_or_else(|| Error::invalid_input("give a source id or --all"))?]
     };
     let reps = ids
         .iter()
         .map(|id| sources::relink(root, id))
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<commonplace_core::Result<Vec<_>>>()?;
     if ctx.json {
         print_json(&reps)?;
         return Ok(0);
@@ -177,18 +178,18 @@ fn relink(ctx: &Ctx, root: &Path, id: Option<String>, all: bool) -> Result<i32> 
 fn show(root: &Path, id: &str, text: bool, at: Option<&str>) -> Result<i32> {
     if !text && at.is_none() {
         let p = root.join(sources::NOTES_DIR).join(format!("{id}.md"));
-        let note = std::fs::read_to_string(&p)
-            .map_err(|_| anyhow!("no source note at {}", p.display()))?;
+        let note = std::fs::read_to_string(&p).map_err(|_| Error::source_not_found(id))?;
         print!("{note}");
         return Ok(0);
     }
-    let tl =
-        sources::load_text_layer(root, id)?.ok_or_else(|| anyhow!("no text layer for '{id}'"))?;
+    let tl = sources::load_text_layer(root, id)?
+        .ok_or_else(|| Error::text_layer_missing(format!("no text layer for '{id}'")))?;
     match at {
         Some(loc) => {
             let l = cite::parse_locator(loc);
-            let sp = cite::span(&tl.text, &l)
-                .ok_or_else(|| anyhow!("locator '{loc}' not found in the text layer"))?;
+            let sp = cite::span(&tl.text, &l).ok_or_else(|| {
+                Error::text_layer_missing(format!("locator '{loc}' not found in the text layer"))
+            })?;
             for (ln, line) in sp {
                 println!("{ln:>5} | {line}");
             }

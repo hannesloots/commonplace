@@ -1,7 +1,7 @@
 //! `.commonplace/manifest.json`: tool-owned registry of sources and their hashes.
 
 use crate::fsutil;
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -42,8 +42,8 @@ impl Manifest {
         if !p.exists() {
             return Ok(Self::default());
         }
-        let s = std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
-        serde_json::from_str(&s).with_context(|| format!("parsing {}", p.display()))
+        let s = std::fs::read_to_string(&p).map_err(|e| Error::io("reading", &p, e))?;
+        serde_json::from_str(&s).map_err(|e| Error::parse(&p, e))
     }
     pub fn save(&self, root: &Path) -> Result<()> {
         let s = serde_json::to_string_pretty(self)?;

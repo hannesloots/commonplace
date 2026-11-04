@@ -9,7 +9,7 @@
 
 use crate::frontmatter;
 use crate::vault::Page;
-use anyhow::{Result, anyhow};
+use crate::{Error, Result};
 use serde_yaml::Value;
 
 #[derive(Debug, Clone)]
@@ -53,7 +53,7 @@ fn lex(input: &str) -> Result<Vec<Tok>> {
                 j += 1;
             }
             if j >= cs.len() {
-                return Err(anyhow!("unterminated string in query"));
+                return Err(Error::invalid_query("unterminated string in query"));
             }
             out.push(Tok::Str(value));
             i = j + 1;
@@ -145,12 +145,14 @@ impl Parser {
                 let e = self.expr()?;
                 match self.next() {
                     Some(Tok::RParen) => Ok(e),
-                    _ => Err(anyhow!("expected )")),
+                    _ => Err(Error::invalid_query("expected )")),
                 }
             }
             Some(Tok::Ident(field)) => {
                 let Some(Tok::Op(op)) = self.next() else {
-                    return Err(anyhow!("expected operator after '{field}'"));
+                    return Err(Error::invalid_query(format!(
+                        "expected operator after '{field}'"
+                    )));
                 };
                 if op == "exists" {
                     return Ok(Expr::Cmp {
@@ -168,11 +170,15 @@ impl Parser {
                             Rhs::Bare(w)
                         }
                     }
-                    _ => return Err(anyhow!("expected value after '{field} {op}'")),
+                    _ => {
+                        return Err(Error::invalid_query(format!(
+                            "expected value after '{field} {op}'"
+                        )));
+                    }
                 };
                 Ok(Expr::Cmp { field, op, rhs })
             }
-            other => Err(anyhow!("unexpected token {other:?}")),
+            other => Err(Error::invalid_query(format!("unexpected token {other:?}"))),
         }
     }
 }
@@ -180,12 +186,12 @@ impl Parser {
 pub fn parse(s: &str) -> Result<Expr> {
     let toks = lex(s)?;
     if toks.is_empty() {
-        return Err(anyhow!("empty query"));
+        return Err(Error::invalid_query("empty query"));
     }
     let mut p = Parser { toks, pos: 0 };
     let e = p.expr()?;
     if p.pos < p.toks.len() {
-        return Err(anyhow!("unexpected trailing tokens in query"));
+        return Err(Error::invalid_query("unexpected trailing tokens in query"));
     }
     Ok(e)
 }

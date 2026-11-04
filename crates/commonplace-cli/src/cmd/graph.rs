@@ -2,7 +2,8 @@
 
 use super::{Ctx, print_json, wikilinks};
 use crate::cli::{GraphCmd, GraphExportArgs, PathArgs, WalkArgs};
-use anyhow::{Result, anyhow, bail};
+use anyhow::Result;
+use commonplace_core::Error;
 use commonplace_core::analysis;
 use commonplace_core::fsutil;
 use commonplace_core::graph::{self, Graph};
@@ -81,7 +82,7 @@ fn schema(ctx: &Ctx, g: &Graph) -> Result<i32> {
 fn walk(ctx: &Ctx, v: &Vault, a: &WalkArgs) -> Result<i32> {
     let g = graph::build(v, a.mentions);
     if g.node(&a.page).is_none() {
-        bail!("no page named '{}'", a.page);
+        return Err(v.page_not_found(&a.page).into());
     }
     let rows = g.walk(&a.page, a.depth, &a.rel, &a.direction);
     if ctx.json {
@@ -110,7 +111,7 @@ fn path(ctx: &Ctx, v: &Vault, a: &PathArgs) -> Result<i32> {
     let g = graph::build(v, a.mentions);
     for p in [&a.from, &a.to] {
         if g.node(p).is_none() {
-            bail!("no page named '{p}'");
+            return Err(v.page_not_found(p).into());
         }
     }
     let paths = g.paths(&a.from, &a.to, a.max_depth, &a.rel, &a.direction, a.limit);
@@ -147,8 +148,7 @@ fn path(ctx: &Ctx, v: &Vault, a: &PathArgs) -> Result<i32> {
 
 fn related(ctx: &Ctx, v: &Vault, page: &str, limit: usize, typed_only: bool) -> Result<i32> {
     let g = graph::build(v, !typed_only);
-    let rows =
-        analysis::related(&g, v, page, limit).ok_or_else(|| anyhow!("no page named '{page}'"))?;
+    let rows = analysis::related(&g, v, page, limit).ok_or_else(|| v.page_not_found(page))?;
     if ctx.json {
         print_json(&rows)?;
         return Ok(0);
@@ -345,7 +345,12 @@ fn export(ctx: &Ctx, v: &Vault, a: GraphExportArgs) -> Result<i32> {
             });
             g.to_mermaid(ids.as_ref())
         }
-        other => bail!("unknown format '{other}' (cypher|graphml|mermaid|dot|json)"),
+        other => {
+            return Err(Error::invalid_input(format!(
+                "unknown format '{other}' (cypher|graphml|mermaid|dot|json)"
+            ))
+            .into());
+        }
     };
     match a.out {
         Some(o) => {

@@ -6,7 +6,7 @@
 use crate::config::Config;
 use crate::frontmatter;
 use crate::fsutil;
-use anyhow::{Result, anyhow, bail};
+use crate::{Error, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -198,10 +198,10 @@ pub fn init(
     };
     std::fs::create_dir_all(root)?;
     if crate::config::config_path(root).exists() && !force {
-        bail!(
-            "{} already has a commonplace.toml (use --force to re-apply templates; existing pages are never overwritten)",
+        return Err(Error::already_exists(format!(
+            "{}/commonplace.toml (use --force to re-apply templates; existing pages are never overwritten)",
             root.display()
-        );
+        )));
     }
     for d in DIRS {
         std::fs::create_dir_all(root.join(d))?;
@@ -223,10 +223,10 @@ pub fn init(
     for raw in packs {
         let (p, jur) = normalise_pack(raw);
         if !known_packs().contains(&p) {
-            bail!(
+            return Err(Error::invalid_input(format!(
                 "unknown pack '{p}'; known packs: {}",
                 known_packs().join(", ")
-            );
+            )));
         }
         if !cfg.packs.contains(&p) {
             cfg.packs.push(p.clone());
@@ -381,14 +381,14 @@ fn find_template(root: &Path, cfg: &Config, ptype: &str) -> Result<(PathBuf, Opt
             return Ok((cand, hint));
         }
     }
-    bail!(
+    Err(Error::invalid_input(format!(
         "no template for type '{ptype}' (core types: {}; pack types come from enabled packs)",
         PAGE_TEMPLATES
             .iter()
             .map(|(n, _)| n.trim_end_matches(".md"))
             .collect::<Vec<_>>()
             .join(", ")
-    );
+    )))
 }
 
 /// A `--set key=value` value: `[a, "b"]` becomes a list of strings, anything else a string.
@@ -420,30 +420,38 @@ pub fn new_page(
         fsutil::safe_title(title)
     };
     if title.is_empty() {
-        bail!("a title is required");
+        return Err(Error::invalid_input("a title is required"));
     }
     let (tpl_path, pack_hint) = find_template(root, cfg, ptype)?;
     let folder = match folder {
         Some(f) => f.trim_matches('/').to_string(),
         None => match default_folder(ptype, &title).or(pack_hint) {
             Some(f) if !f.contains('<') => f,
-            Some(f) => bail!("type '{ptype}' needs --folder (hint: {f})"),
-            None => bail!("type '{ptype}' needs --folder"),
+            Some(f) => {
+                return Err(Error::invalid_input(format!(
+                    "type '{ptype}' needs --folder (hint: {f})"
+                )));
+            }
+            None => {
+                return Err(Error::invalid_input(format!(
+                    "type '{ptype}' needs --folder"
+                )));
+            }
         },
     };
     let dir = root.join(&folder);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{title}.md"));
     if path.exists() {
-        bail!("{} already exists", fsutil::rel(root, &path));
+        return Err(Error::already_exists(fsutil::rel(root, &path)));
     }
     // uniqueness of stem across vault
     for existing in crate::vault::walk_markdown(root) {
         if fsutil::stem(&existing).eq_ignore_ascii_case(&title) {
-            bail!(
-                "a page named '{title}' already exists at {} (extend it, or pick a distinct title)",
+            return Err(Error::already_exists(format!(
+                "a page named '{title}' (at {}; extend it, or pick a distinct title)",
                 fsutil::rel(root, &existing)
-            );
+            )));
         }
     }
     let raw = std::fs::read_to_string(&tpl_path)?;
@@ -499,14 +507,14 @@ pub fn persona_text(
             return Ok(std::fs::read_to_string(c)?);
         }
     }
-    Err(anyhow!(
+    Err(Error::invalid_input(format!(
         "persona '{name}' not found (looked in {})",
         candidates
             .iter()
             .map(|c| c.display().to_string())
             .collect::<Vec<_>>()
             .join(", ")
-    ))
+    )))
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::frontmatter::{self, Document};
 use crate::fsutil;
 use crate::markdown::{self, WikiLink};
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -254,6 +254,12 @@ impl Vault {
         cands
     }
 
+    /// A `page_not_found` error for `name`, with the closest titles as suggestions.
+    pub fn page_not_found(&self, name: &str) -> Error {
+        let suggestions = self.suggest(name, 3).into_iter().map(|(s, _)| s).collect();
+        Error::page_not_found(name, suggestions)
+    }
+
     /// Inbound link map: page index -> set of page indexes linking to it.
     pub fn backlinks(&self) -> HashMap<usize, Vec<usize>> {
         let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
@@ -323,9 +329,9 @@ pub fn walk_markdown(root: &Path) -> Vec<PathBuf> {
 }
 
 pub fn load_page(root: &Path, path: &Path) -> Result<Page> {
-    let text =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let doc = frontmatter::parse(&text).with_context(|| fsutil::rel(root, path).clone())?;
+    let text = std::fs::read_to_string(path).map_err(|e| Error::io("reading", path, e))?;
+    let doc =
+        frontmatter::parse(&text).map_err(|e| e.in_file(Path::new(&fsutil::rel(root, path))))?;
     let ptype = frontmatter::get_str(&doc.fm, "type").unwrap_or_default();
     let stem = fsutil::stem(path);
     let title = frontmatter::get_str(&doc.fm, "title")

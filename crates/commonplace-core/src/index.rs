@@ -1,11 +1,11 @@
 //! Generated navigation: root index.md (L1), hubs for large groups, and the
 //! generated page lists inside project / area / topic pages (maps of content).
 
+use crate::Result;
 use crate::frontmatter;
 use crate::fsutil;
 use crate::markdown;
 use crate::vault::{Page, Vault};
-use anyhow::Result;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

@@ -5,6 +5,7 @@
 pub mod analysis;
 pub mod cite;
 pub mod config;
+mod error;
 pub mod frontmatter;
 pub mod fsutil;
 pub mod graph;
@@ -19,6 +20,8 @@ pub mod scaffold;
 pub mod search;
 pub mod sources;
 pub mod vault;
+
+pub use error::{Error, Result};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::frontmatter;
 use crate::fsutil;
 use crate::manifest::{Manifest, SourceRecord};
-use anyhow::{Context, Result, anyhow, bail};
+use crate::{Error, Result};
 use regex::Regex;
 use serde::Serialize;
 use std::fmt::Write as _;
@@ -124,8 +124,7 @@ fn store_raw(src: &Path, raw_path: &Path, move_file: bool) -> Result<()> {
                 .and_then(|()| std::fs::remove_file(src))
         })?;
     } else {
-        std::fs::copy(src, raw_path)
-            .with_context(|| format!("copying to {}", raw_path.display()))?;
+        std::fs::copy(src, raw_path).map_err(|e| Error::io("copying to", raw_path, e))?;
     }
     set_readonly(raw_path);
     Ok(())
@@ -295,7 +294,10 @@ pub fn ingest(
     opts: &IngestOptions,
 ) -> Result<IngestReport> {
     if !src.is_file() {
-        bail!("{} is not a file", src.display());
+        return Err(Error::invalid_input(format!(
+            "{} is not a file",
+            src.display()
+        )));
     }
     let mut warnings = vec![];
     let sha = fsutil::sha256_file(src)?;
@@ -546,7 +548,7 @@ pub fn html_to_markdown(html: &str, origin: Option<&str>) -> Result<String> {
         .build();
     let md = conv
         .convert(html)
-        .map_err(|e| anyhow!("html conversion failed: {e}"))?;
+        .map_err(|e| Error::conversion(format!("html conversion failed: {e}")))?;
     Ok(match origin {
         Some(o) if o.contains("://") => absolutise_links(&md, o, |_| false).0,
         _ => md,
@@ -649,7 +651,7 @@ pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
     let rec = manifest
         .sources
         .get_mut(id)
-        .ok_or_else(|| anyhow!("unknown source id '{id}'"))?;
+        .ok_or_else(|| Error::source_not_found(id))?;
     let mut rep = RelinkReport {
         id: id.to_string(),
         origin: rec.origin.clone(),
@@ -934,9 +936,11 @@ pub fn attach_text(root: &Path, id: &str, converter: &str, fidelity: &str) -> Re
     let rec = manifest
         .sources
         .get_mut(id)
-        .ok_or_else(|| anyhow!("unknown source id '{id}'"))?;
+        .ok_or_else(|| Error::source_not_found(id))?;
     let p = text_layer_path(root, id).ok_or_else(|| {
-        anyhow!("no text layer found at {TEXT_DIR}/{id}.text.md or {TEXT_DIR}/{id}/")
+        Error::text_layer_missing(format!(
+            "no text layer found at {TEXT_DIR}/{id}.text.md or {TEXT_DIR}/{id}/"
+        ))
     })?;
     let rel = fsutil::rel(root, &p);
     let hash = if p.is_file() {

@@ -8,7 +8,7 @@ use crate::markdown;
 use crate::pack::Pack;
 use crate::sources;
 use crate::vault::{Page, Vault};
-use anyhow::{Result, anyhow, bail};
+use crate::{Error, Result};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -31,7 +31,7 @@ pub fn log_append(root: &Path, op: &str, title: &str, bullets: &[String]) -> Res
     fsutil::write_atomic(&p, text.as_bytes())
 }
 
-/// Keep the newest `keep` entries in log.md; move the rest to archive/log-<year>.md.
+/// Keep the newest `keep` entries in log.md; move the rest to `archive/log-<year>.md`.
 pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
     let p = root.join("log.md");
     let text = std::fs::read_to_string(&p)?;
@@ -136,13 +136,18 @@ pub struct RenameReport {
     pub links_rewritten: usize,
 }
 
+/// An escaped title only fails to compile when it exceeds the regex size limit.
+fn title_regex_error(e: &regex::Error) -> Error {
+    Error::invalid_input(format!("title is too long to match: {e}"))
+}
+
 pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport> {
     let page = vault
         .resolve_page(old)
-        .ok_or_else(|| anyhow!("no page named '{old}'"))?;
+        .ok_or_else(|| vault.page_not_found(old))?;
     let new_title = fsutil::safe_title(new_title);
     if vault.resolve_page(&new_title).is_some() {
-        bail!("a page named '{new_title}' already exists");
+        return Err(Error::already_exists(format!("a page named '{new_title}'")));
     }
     let new_path = page.path.with_file_name(format!("{new_title}.md"));
     let old_stem = page.stem.clone();
@@ -150,7 +155,8 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
     let re = Regex::new(&format!(
         r"(?i)\[\[(?:[^\]\|#]*/)?{}(#[^\]\|]*)?(\|[^\]]*)?\]\]",
         regex::escape(&old_stem)
-    ))?;
+    ))
+    .map_err(|e| title_regex_error(&e))?;
     let mut files_updated = vec![];
     let mut links = 0;
     for p in &vault.pages {
@@ -184,7 +190,8 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
         serde_yaml::Value::Sequence(aliases.into_iter().map(serde_yaml::Value::String).collect()),
     );
     frontmatter::set_str(&mut doc.fm, "updated", &fsutil::today());
-    let h1 = Regex::new(&format!(r"(?m)^# {}\s*$", regex::escape(&old_stem)))?;
+    let h1 = Regex::new(&format!(r"(?m)^# {}\s*$", regex::escape(&old_stem)))
+        .map_err(|e| title_regex_error(&e))?;
     let body = h1.replace(&doc.body, format!("# {new_title}")).to_string();
     fsutil::write_atomic(&new_path, frontmatter::render(&doc.fm, &body)?.as_bytes())?;
     std::fs::remove_file(&page.path)?;
@@ -278,7 +285,9 @@ pub struct TraceRow {
 /// with no link in `field` yields a row padded with "—" (a gap).
 pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceRow>)> {
     if chain.len() < 3 || chain.len().is_multiple_of(2) {
-        bail!("chain must be type, field, type[, field, type ...]");
+        return Err(Error::invalid_input(
+            "chain must be type, field, type[, field, type ...]",
+        ));
     }
     let header: Vec<String> = chain.iter().step_by(2).cloned().collect();
     let mut rows: Vec<Vec<String>> = vault
@@ -354,7 +363,7 @@ pub fn pack_trace<'a>(packs: &'a [Pack], name: &str) -> Option<&'a crate::pack::
 pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
     let page = vault
         .resolve_page(target)
-        .ok_or_else(|| anyhow!("no page named '{target}'"))?;
+        .ok_or_else(|| vault.page_not_found(target))?;
     let folder = page.folder();
     let src_dir = if folder.is_empty() {
         page.path.clone()
@@ -367,7 +376,7 @@ pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
         folder.clone()
     });
     if dest.exists() {
-        bail!("{} already exists", dest.display());
+        return Err(Error::already_exists(dest.display().to_string()));
     }
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
@@ -449,7 +458,7 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
     };
     let pages = select_pages(vault, targets.iter().map(String::as_str), |_| true);
     if pages.is_empty() {
-        bail!("nothing matched {targets:?}");
+        return Err(Error::invalid_input(format!("nothing matched {targets:?}")));
     }
     let mut out = String::new();
     let mut bib: BTreeMap<String, &Page> = BTreeMap::new();
@@ -587,7 +596,7 @@ pub fn review_packet(
         !p.rel.starts_with("indexes/")
     });
     if pages.is_empty() {
-        bail!("nothing matched {targets:?}");
+        return Err(Error::invalid_input(format!("nothing matched {targets:?}")));
     }
     let mut out = String::new();
     let _ = write!(
@@ -666,7 +675,7 @@ pub fn review_record(
     model: Option<&str>,
 ) -> Result<ReviewRecord> {
     let findings: Vec<serde_json::Value> = serde_json::from_str(findings_json.trim())
-        .map_err(|e| anyhow!("findings must be a JSON array: {e}"))?;
+        .map_err(|e| Error::invalid_input(format!("findings must be a JSON array: {e}")))?;
     let today = fsutil::today();
     let text_of = |f: &serde_json::Value, k: &str| {
         f.get(k)
@@ -867,7 +876,7 @@ fn renumber_footnotes(body: &str, counter: &mut usize) -> String {
 
 pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
     let crate::vault::Resolution::Found(idx) = vault.resolve(target) else {
-        bail!("no page named '{target}'");
+        return Err(vault.page_not_found(target));
     };
     let bl = vault.backlinks();
     let mut v: Vec<String> = bl

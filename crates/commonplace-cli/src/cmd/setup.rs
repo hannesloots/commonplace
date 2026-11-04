@@ -2,7 +2,8 @@
 
 use super::{Ctx, print_json, skill_dir};
 use crate::cli::{InitArgs, PackCmd};
-use anyhow::{Result, bail};
+use anyhow::Result;
+use commonplace_core::Error;
 use commonplace_core::{config, index, ops, pack, scaffold, sources, vault::Vault};
 use serde::Serialize;
 
@@ -227,10 +228,11 @@ fn pack_install(ctx: &Ctx, name: &str, jurisdiction: Option<&str>) -> Result<i32
     let mut cfg = config::Config::load(&root)?;
     let (name, alias_jur) = scaffold::normalise_pack(name);
     if !scaffold::known_packs().contains(&name) {
-        bail!(
+        return Err(Error::invalid_input(format!(
             "unknown pack '{name}'; known: {}",
             scaffold::known_packs().join(", ")
-        );
+        ))
+        .into());
     }
     scaffold::install_pack(&root, &name)?;
     if !cfg.packs.contains(&name) {
@@ -244,10 +246,11 @@ fn pack_install(ctx: &Ctx, name: &str, jurisdiction: Option<&str>) -> Result<i32
                 .join(format!("{j}.yaml"))
                 .is_file()
         {
-            bail!(
+            return Err(Error::invalid_input(format!(
                 "unknown jurisdiction '{j}'; shipped profiles: {} (or add .commonplace/packs/legal/jurisdictions/{j}.yaml)",
                 known.join(", ")
-            );
+            ))
+            .into());
         }
         cfg.jurisdiction = j.to_string();
     }

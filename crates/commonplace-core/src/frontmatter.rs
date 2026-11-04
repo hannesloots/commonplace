@@ -1,7 +1,7 @@
 //! YAML frontmatter split/parse/serialise. The mapping keeps insertion order so
 //! rewriting a page does not reshuffle its properties.
 
-use anyhow::{Result, anyhow};
+use crate::{Error, Result};
 use serde_yaml::{Mapping, Value};
 
 /// A parsed page: frontmatter mapping (may be empty) and body text.
@@ -43,7 +43,10 @@ pub fn parse(text: &str) -> Result<Document> {
         yaml.push_str(line);
     }
     if !closed {
-        return Err(anyhow!("frontmatter opened with --- but never closed"));
+        return Err(Error::frontmatter(
+            None,
+            "frontmatter opened with --- but never closed",
+        ));
     }
     let fm: Mapping = if yaml.trim().is_empty() {
         Mapping::new()
@@ -51,7 +54,12 @@ pub fn parse(text: &str) -> Result<Document> {
         match serde_yaml::from_str::<Value>(&yaml)? {
             Value::Mapping(m) => m,
             Value::Null => Mapping::new(),
-            other => return Err(anyhow!("frontmatter is not a mapping: {other:?}")),
+            other => {
+                return Err(Error::frontmatter(
+                    None,
+                    format!("frontmatter is not a mapping: {other:?}"),
+                ));
+            }
         }
     };
     Ok(Document {

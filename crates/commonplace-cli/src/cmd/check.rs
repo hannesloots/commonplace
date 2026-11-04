@@ -2,7 +2,8 @@
 
 use super::{Ctx, paths_set, print_json};
 use crate::cli::{CiteCmd, LinksCmd, LintArgs};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+use commonplace_core::Error;
 use commonplace_core::{cite, fsutil, lint, manifest::Manifest, ops, sources, vault::Vault};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -128,7 +129,7 @@ fn page_and_para(lines: &[(usize, &str)], upto: usize) -> (Option<String>, Optio
 
 fn cite_find(ctx: &Ctx, v: &Vault, source: &str, quote: &str) -> Result<i32> {
     let tl = sources::load_text_layer(&v.root, source)?
-        .ok_or_else(|| anyhow!("no text layer for '{source}'"))?;
+        .ok_or_else(|| Error::text_layer_missing(format!("no text layer for '{source}'")))?;
     let lines: Vec<(usize, &str)> = tl
         .text
         .lines()

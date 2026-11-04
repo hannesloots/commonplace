@@ -25,19 +25,26 @@ impl Ctx {
     /// The commonplace root: `--root` if given, else found by walking up from the current directory.
     pub(crate) fn find_root(&self) -> Result<PathBuf> {
         match &self.root {
+            Some(r) if !config::config_path(r).is_file() => {
+                Err(commonplace_core::Error::no_root(r).into())
+            }
             Some(r) => Ok(r.canonicalize().unwrap_or_else(|_| r.clone())),
-            None => config::find_root(&std::env::current_dir()?),
+            None => Ok(config::find_root(&std::env::current_dir()?)?),
         }
     }
 
     /// Open the vault at [`Ctx::find_root`].
     pub(crate) fn open(&self) -> Result<Vault> {
-        Vault::open(&self.find_root()?)
+        Ok(Vault::open(&self.find_root()?)?)
     }
 }
 
 pub(crate) fn load_packs(v: &Vault) -> Result<Vec<pack::Pack>> {
-    pack::load_packs(&v.packs_dir(), &v.config.packs, &v.config.jurisdiction)
+    Ok(pack::load_packs(
+        &v.packs_dir(),
+        &v.config.packs,
+        &v.config.jurisdiction,
+    )?)
 }
 
 pub(crate) fn skill_dir() -> Option<PathBuf> {

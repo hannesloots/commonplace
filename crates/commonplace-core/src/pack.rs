@@ -2,7 +2,7 @@
 //! `.commonplace/packs/<name>/pack.yaml`. The binary has no domain knowledge; packs
 //! are data, so a user can add or edit one without touching Rust.
 
-use anyhow::{Context, Result, bail};
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -110,9 +110,9 @@ pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Res
         if !p.is_file() {
             continue;
         }
-        let s = std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
+        let s = std::fs::read_to_string(&p).map_err(|e| Error::io("reading", &p, e))?;
         let mut value: serde_yaml::Value =
-            serde_yaml::from_str(&s).with_context(|| format!("parsing {}", p.display()))?;
+            serde_yaml::from_str(&s).map_err(|e| Error::parse(&p, e))?;
         let mut profile = None;
         let jdir = packs_dir.join(&n).join("jurisdictions");
         if jdir.is_dir() {
@@ -124,20 +124,18 @@ pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Res
             let jp = jdir.join(format!("{code}.yaml"));
             if !jp.is_file() {
                 let available = available_jurisdictions(&jdir).join(", ");
-                bail!(
+                return Err(Error::invalid_input(format!(
                     "pack '{n}' has no jurisdiction profile '{code}' (expected {}); available: {available}. Set `jurisdiction` in commonplace.toml or add the profile",
                     jp.display()
-                );
+                )));
             }
-            let js = std::fs::read_to_string(&jp)
-                .with_context(|| format!("reading {}", jp.display()))?;
+            let js = std::fs::read_to_string(&jp).map_err(|e| Error::io("reading", &jp, e))?;
             let jv: serde_yaml::Value =
-                serde_yaml::from_str(&js).with_context(|| format!("parsing {}", jp.display()))?;
+                serde_yaml::from_str(&js).map_err(|e| Error::parse(&jp, e))?;
             substitute(&mut value, &jv);
             profile = Some(jv);
         }
-        let mut pack: Pack =
-            serde_yaml::from_value(value).with_context(|| format!("parsing {}", p.display()))?;
+        let mut pack: Pack = serde_yaml::from_value(value).map_err(|e| Error::parse(&p, e))?;
         if pack.name.is_empty() {
             pack.name.clone_from(&n);
         }

@@ -1,6 +1,6 @@
 //! commonplace.toml and root discovery.
 
-use anyhow::{Context, Result, anyhow};
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -150,9 +150,8 @@ impl Default for ReviewConfig {
 impl Config {
     pub fn load(root: &Path) -> Result<Self> {
         let p = config_path(root);
-        let s = std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
-        let mut c: Config =
-            toml::from_str(&s).with_context(|| format!("parsing {}", p.display()))?;
+        let s = std::fs::read_to_string(&p).map_err(|e| Error::io("reading", &p, e))?;
+        let mut c: Config = toml::from_str(&s).map_err(|e| Error::parse(&p, e))?;
         // compatibility: the pre-0.3 `sa-legal` pack is `legal` with jurisdiction za
         let mut packs = vec![];
         for p in &c.packs {
@@ -185,8 +184,5 @@ pub fn find_root(start: &Path) -> Result<PathBuf> {
         }
         cur = dir.parent().map(std::path::Path::to_path_buf);
     }
-    Err(anyhow!(
-        "no {CONFIG_FILE} found in {} or its parents (run `commonplace init` or pass --root)",
-        start.display()
-    ))
+    Err(Error::no_root(start))
 }

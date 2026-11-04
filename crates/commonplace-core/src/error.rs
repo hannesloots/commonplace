@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 /// `Result` with this crate's [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// Error returned by commonplace-core. See the [module docs](self).
+/// Error returned by commonplace-core: a stable [`code`](Error::code), a
+/// message (`Display`), an optional [`hint`](Error::hint) and, for missing
+/// pages, [`suggestions`](Error::suggestions).
 pub struct Error {
     kind: Kind,
     backtrace: Backtrace,
@@ -25,15 +27,18 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Debug, thiserror::Error)]
 enum Kind {
     #[error("no page named '{name}'")]
-    PageNotFound { name: String, suggestions: Vec<String> },
+    PageNotFound {
+        name: String,
+        suggestions: Vec<String>,
+    },
     #[error("unknown source id '{id}'")]
     SourceNotFound { id: String },
     #[error("{message}")]
     TextLayerMissing { message: String },
     #[error("{what} already exists")]
     AlreadyExists { what: String },
-    #[error("no commonplace found (no commonplace.toml in this directory or any parent)")]
-    NoRoot,
+    #[error("no commonplace.toml found in {} or its parents", start.display())]
+    NoRoot { start: PathBuf },
     #[error("{message}")]
     InvalidQuery { message: String },
     #[error("{message}")]
@@ -60,7 +65,8 @@ enum Kind {
 }
 
 fn path_prefix(path: Option<&Path>) -> String {
-    path.map(|p| format!("{}: ", p.display())).unwrap_or_default()
+    path.map(|p| format!("{}: ", p.display()))
+        .unwrap_or_default()
 }
 
 impl Error {
@@ -96,9 +102,11 @@ impl Error {
         Self::new(Kind::AlreadyExists { what: what.into() })
     }
 
-    /// No `commonplace.toml` was found walking up from the working directory.
-    pub fn no_root() -> Self {
-        Self::new(Kind::NoRoot)
+    /// No `commonplace.toml` was found walking up from `start`.
+    pub fn no_root(start: &Path) -> Self {
+        Self::new(Kind::NoRoot {
+            start: start.to_path_buf(),
+        })
     }
 
     /// A `query --where` expression could not be parsed.
@@ -164,7 +172,7 @@ impl Error {
             Kind::SourceNotFound { .. } => "source_not_found",
             Kind::TextLayerMissing { .. } => "text_layer_missing",
             Kind::AlreadyExists { .. } => "already_exists",
-            Kind::NoRoot => "no_root",
+            Kind::NoRoot { .. } => "no_root",
             Kind::InvalidQuery { .. } => "invalid_query",
             Kind::InvalidInput { .. } => "invalid_input",
             Kind::Frontmatter { .. } => "frontmatter",
@@ -187,7 +195,7 @@ impl Error {
                     .into(),
             ),
             Kind::AlreadyExists { .. } => Some("choose another name, or edit the existing one".into()),
-            Kind::NoRoot => Some("run `commonplace init <dir>` or pass --root <dir>".into()),
+            Kind::NoRoot { .. } => Some("run `commonplace init <dir>` or pass --root <dir>".into()),
             Kind::InvalidQuery { .. } => Some(
                 "syntax: field=value, field>value, `a>b`, joined with and/or/not and ( )".into(),
             ),
@@ -297,7 +305,12 @@ macro_rules! from_parse_error {
         }
     )*};
 }
-from_parse_error!(serde_yaml::Error, serde_json::Error, toml::de::Error, toml::ser::Error);
+from_parse_error!(
+    serde_yaml::Error,
+    serde_json::Error,
+    toml::de::Error,
+    toml::ser::Error
+);
 
 #[cfg(test)]
 mod tests {
@@ -310,7 +323,7 @@ mod tests {
             Error::source_not_found("x"),
             Error::text_layer_missing("x"),
             Error::already_exists("x"),
-            Error::no_root(),
+            Error::no_root(Path::new("/x")),
             Error::invalid_query("x"),
             Error::invalid_input("x"),
             Error::frontmatter(None, "x"),
@@ -341,7 +354,11 @@ mod tests {
 
     #[test]
     fn io_error_names_operation_and_path() {
-        let e = Error::io("reading", Path::new("notes/a.md"), std::io::Error::other("denied"));
+        let e = Error::io(
+            "reading",
+            Path::new("notes/a.md"),
+            std::io::Error::other("denied"),
+        );
         assert_eq!(e.to_string(), "reading notes/a.md: denied");
         assert_eq!(e.path(), Some(Path::new("notes/a.md")));
         assert!(std::error::Error::source(&e).is_some());
@@ -359,7 +376,10 @@ mod tests {
     fn codes_are_documented_for_agents() {
         let doc = include_str!("../../../skills/commonplace/references/cli.md");
         for code in Error::CODES {
-            assert!(doc.contains(&format!("`{code}`")), "error code `{code}` missing from references/cli.md");
+            assert!(
+                doc.contains(&format!("`{code}`")),
+                "error code `{code}` missing from references/cli.md"
+            );
         }
     }
 }

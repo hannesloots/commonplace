@@ -2,7 +2,8 @@
 
 use super::{Ctx, print_json};
 use crate::cli::{QueryArgs, SearchArgs, TraceArgs};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+use commonplace_core::Error;
 use commonplace_core::{frontmatter, ops, query, search, vault::Page};
 
 pub(crate) fn search(ctx: &Ctx, a: SearchArgs) -> Result<i32> {
@@ -102,14 +103,14 @@ pub(crate) fn trace(ctx: &Ctx, a: TraceArgs) -> Result<i32> {
     let chain: Vec<String> = match a.name {
         Some(n) => ops::pack_trace(&packs, &n)
             .ok_or_else(|| {
-                anyhow!(
+                Error::invalid_input(format!(
                     "no pack trace named '{n}' (available: {})",
                     packs
                         .iter()
                         .flat_map(|p| p.traces.iter().map(|t| t.name.as_str()))
                         .collect::<Vec<_>>()
                         .join(", ")
-                )
+                ))
             })?
             .chain
             .clone(),

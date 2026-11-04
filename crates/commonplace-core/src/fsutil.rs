@@ -1,21 +1,19 @@
 //! Small filesystem helpers: atomic writes, hashing, slugs, path display.
 
-use anyhow::{Context, Result};
+use crate::{Error, Result};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(|e| Error::io("creating", parent, e))?;
     }
     let tmp = path.with_extension(format!(
         "{}.tmp~",
         path.extension().and_then(|e| e.to_str()).unwrap_or("")
     ));
-    std::fs::write(&tmp, data).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, path)
-        .with_context(|| format!("renaming {} to {}", tmp.display(), path.display()))?;
+    std::fs::write(&tmp, data).map_err(|e| Error::io("writing", &tmp, e))?;
+    std::fs::rename(&tmp, path).map_err(|e| Error::io("renaming to", path, e))?;
     Ok(())
 }
 
@@ -28,7 +26,7 @@ pub fn write_if_absent(path: &Path, data: &str) -> Result<bool> {
 }
 
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let mut f = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut f = std::fs::File::open(path).map_err(|e| Error::io("opening", path, e))?;
     let mut h = Sha256::new();
     std::io::copy(&mut f, &mut h)?;
     Ok(hex::encode(h.finalize()))

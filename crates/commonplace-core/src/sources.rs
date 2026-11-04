@@ -237,6 +237,57 @@ fn render_source_note(
     frontmatter::render(&fm, &body)
 }
 
+/// An original stored under `sources/raw` with its new id.
+struct StoredRaw {
+    id: String,
+    title: String,
+    date: String,
+    /// Lowercase file extension, or empty.
+    ext: String,
+    raw_rel: String,
+    raw_path: PathBuf,
+}
+
+/// Name the source, create the source folders, and copy (or move) the original in.
+fn store_original(
+    root: &Path,
+    manifest: &Manifest,
+    src: &Path,
+    opts: &IngestOptions,
+    warnings: &mut Vec<String>,
+) -> Result<StoredRaw> {
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let (title, date) = title_and_date(opts, &fsutil::stem(src));
+    for dir in [RAW_DIR, NOTES_DIR, TEXT_DIR] {
+        std::fs::create_dir_all(root.join(dir))?;
+    }
+    let id = unique_id(
+        manifest,
+        &root.join(NOTES_DIR),
+        make_id(&title, &date),
+        warnings,
+    );
+    let raw_name = if ext.is_empty() {
+        id.clone()
+    } else {
+        format!("{id}.{ext}")
+    };
+    let raw_path = root.join(RAW_DIR).join(&raw_name);
+    store_raw(src, &raw_path, opts.move_file)?;
+    Ok(StoredRaw {
+        id,
+        title,
+        date,
+        ext,
+        raw_rel: format!("{RAW_DIR}/{raw_name}"),
+        raw_path,
+    })
+}
+
 pub fn ingest(
     root: &Path,
     config: &Config,
@@ -254,26 +305,14 @@ pub fn ingest(
     {
         return Ok(duplicate_report(id, rec, sha));
     }
-    let ext = src
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let (title, date) = title_and_date(opts, &fsutil::stem(src));
-    let notes_dir = root.join(NOTES_DIR);
-    for dir in [RAW_DIR, NOTES_DIR, TEXT_DIR] {
-        std::fs::create_dir_all(root.join(dir))?;
-    }
-    let id = unique_id(&manifest, &notes_dir, make_id(&title, &date), &mut warnings);
-    let raw_name = if ext.is_empty() {
-        id.clone()
-    } else {
-        format!("{id}.{ext}")
-    };
-    let raw_rel = format!("{RAW_DIR}/{raw_name}");
-    let raw_path = root.join(RAW_DIR).join(&raw_name);
-    store_raw(src, &raw_path, opts.move_file)?;
-
+    let StoredRaw {
+        id,
+        title,
+        date,
+        ext,
+        raw_rel,
+        raw_path,
+    } = store_original(root, &manifest, src, opts, &mut warnings)?;
     let kind = opts.kind.clone().unwrap_or_else(|| guess_kind(&ext));
     let conv = convert(
         &raw_path,
@@ -283,20 +322,14 @@ pub fn ingest(
         opts.origin.as_deref(),
     )?;
     let text_rel = format!("{TEXT_DIR}/{id}.text.md");
-    let (text_sha, pages) = match &conv.markdown {
-        Some(c) => (
-            Some(write_text_layer(
-                root, &text_rel, &id, &raw_rel, &sha, &conv, c,
-            )?),
-            c.pages,
-        ),
-        None => (None, None),
-    };
     let needs_conversion = conv.markdown.is_none();
-    if needs_conversion {
+    let (text, text_sha, pages) = if let Some(c) = &conv.markdown {
+        let text_sha = write_text_layer(root, &text_rel, &id, &raw_rel, &sha, &conv, c)?;
+        (Some(text_rel), Some(text_sha), c.pages)
+    } else {
         warnings.push(format!("no converter could handle .{ext}: {}. Write the text layer yourself at {text_rel} (see references/ingest.md) and run `commonplace source attach-text \"{id}\"`.", conv.reason));
-    }
-    let text = (!needs_conversion).then_some(text_rel);
+        (None, None, None)
+    };
 
     let note_rel = format!("{NOTES_DIR}/{id}.md");
     let fields = NoteFields {
@@ -309,19 +342,17 @@ pub fn ingest(
     let note_text = render_source_note(&fields, opts, &conv)?;
     fsutil::write_atomic(&root.join(&note_rel), note_text.as_bytes())?;
 
-    manifest.sources.insert(
-        id.clone(),
-        SourceRecord {
-            raw: raw_rel.clone(),
-            raw_sha256: sha.clone(),
-            text: text.clone(),
-            text_sha256: text_sha,
-            note: Some(note_rel.clone()),
-            ingested: fsutil::now_iso(),
-            converter: Some(conv.converter.clone()),
-            origin: opts.origin.clone(),
-        },
-    );
+    let record = SourceRecord {
+        raw: raw_rel.clone(),
+        raw_sha256: sha.clone(),
+        text: text.clone(),
+        text_sha256: text_sha,
+        note: Some(note_rel.clone()),
+        ingested: fsutil::now_iso(),
+        converter: Some(conv.converter.clone()),
+        origin: opts.origin.clone(),
+    };
+    manifest.sources.insert(id.clone(), record);
     manifest.save(root)?;
     warnings.extend(conv.warning);
     Ok(IngestReport {

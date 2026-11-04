@@ -6,7 +6,7 @@
 
 use crate::cite;
 use crate::markdown;
-use crate::vault::{Resolution, Vault};
+use crate::vault::{Page, Resolution, Vault};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -49,41 +49,43 @@ pub struct Graph {
 /// Frontmatter fields that are structural, not relations.
 const NON_RELATION_FIELDS: &[&str] = &["aliases", "tags"];
 
-pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
-    let mut g = Graph::default();
-    for p in &vault.pages {
-        if p.parse_error.is_some()
-            || p.rel == "index.md"
-            || p.rel.starts_with("indexes/")
-            || [
-                "index",
-                "log",
-                "registry",
-                "questions",
-                "error-book",
-                "review",
-            ]
-            .contains(&p.ptype.as_str())
-        {
-            continue;
-        }
-        g.index.insert(p.stem.to_lowercase(), g.nodes.len());
-        g.nodes.push(Node {
-            id: p.stem.clone(),
-            rel: p.rel.clone(),
-            label: if p.ptype.is_empty() {
-                "page".into()
-            } else {
-                p.ptype.clone()
-            },
-            title: p.title.clone(),
-            description: p.get("description").unwrap_or_default(),
-            status: p.get("status").unwrap_or_default(),
-            folder: p.folder(),
-        });
+/// Page types that are navigation or bookkeeping, not graph nodes.
+const NON_NODE_TYPES: [&str; 6] = [
+    "index",
+    "log",
+    "registry",
+    "questions",
+    "error-book",
+    "review",
+];
+
+/// The node for a page, or `None` for unparseable and navigation pages.
+fn graph_node(p: &Page) -> Option<Node> {
+    if p.parse_error.is_some()
+        || p.rel == "index.md"
+        || p.rel.starts_with("indexes/")
+        || NON_NODE_TYPES.contains(&p.ptype.as_str())
+    {
+        return None;
     }
-    let mut seen: HashSet<Edge> = HashSet::new();
-    let mut add = |g: &mut Graph, from: &str, to: &str, rel: &str| {
+    Some(Node {
+        id: p.stem.clone(),
+        rel: p.rel.clone(),
+        label: if p.ptype.is_empty() {
+            "page".into()
+        } else {
+            p.ptype.clone()
+        },
+        title: p.title.clone(),
+        description: p.get("description").unwrap_or_default(),
+        status: p.get("status").unwrap_or_default(),
+        folder: p.folder(),
+    })
+}
+
+impl Graph {
+    /// Add an edge unless it is a self loop or already present.
+    fn add_edge(&mut self, seen: &mut HashSet<Edge>, from: &str, to: &str, rel: &str) {
         let e = Edge {
             from: from.to_string(),
             to: to.to_string(),
@@ -92,59 +94,73 @@ pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
         if from.eq_ignore_ascii_case(to) || !seen.insert(e.clone()) {
             return;
         }
-        let i = g.edges.len();
-        g.edges.push(e);
-        g.out.entry(from.to_lowercase()).or_default().push(i);
-        g.inn.entry(to.to_lowercase()).or_default().push(i);
-    };
-    let resolve = |t: &str| -> Option<String> {
-        match vault.resolve(t) {
-            Resolution::Found(i) => Some(vault.pages[i].stem.clone()),
-            _ => None,
+        let i = self.edges.len();
+        self.edges.push(e);
+        self.out.entry(from.to_lowercase()).or_default().push(i);
+        self.inn.entry(to.to_lowercase()).or_default().push(i);
+    }
+}
+
+/// The stem of the one page `target` resolves to.
+fn resolve_stem(vault: &Vault, target: &str) -> Option<String> {
+    match vault.resolve(target) {
+        Resolution::Found(i) => Some(vault.pages[i].stem.clone()),
+        _ => None,
+    }
+}
+
+/// A page's outgoing edges, in order: frontmatter link fields (`sources` becomes
+/// `cites`), inline `field:: [[x]]` fields, citations, then plain wikilinks as
+/// `mentions` when asked for. Unresolvable targets are skipped.
+fn page_edges(vault: &Vault, p: &Page, include_mentions: bool) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = vec![];
+    for (field, target) in &p.fm_links {
+        if NON_RELATION_FIELDS.contains(&field.as_str()) {
+            continue;
         }
-    };
+        if let Some(t) = resolve_stem(vault, target) {
+            let rel = if field == "sources" { "cites" } else { field };
+            out.push((t, rel.to_string()));
+        }
+    }
+    let masked = markdown::mask_comments(&markdown::mask_code(&p.doc.body));
+    for c in INLINE_FIELD_RE.captures_iter(&masked) {
+        let field = c[1].to_lowercase();
+        for target in markdown::wikilink_targets_in(&c[2]) {
+            if let Some(t) = resolve_stem(vault, &target) {
+                out.push((t, field.clone()));
+            }
+        }
+    }
+    let (cites, _) = cite::parse_citations(&p.doc.body);
+    for c in &cites {
+        if let Some(t) = resolve_stem(vault, &c.source) {
+            out.push((t, "cites".into()));
+        }
+    }
+    if include_mentions {
+        for l in &p.body_links {
+            if let Some(t) = resolve_stem(vault, &l.target) {
+                out.push((t, "mentions".into()));
+            }
+        }
+    }
+    out
+}
+
+pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
+    let mut g = Graph::default();
+    for node in vault.pages.iter().filter_map(graph_node) {
+        g.index.insert(node.id.to_lowercase(), g.nodes.len());
+        g.nodes.push(node);
+    }
+    let mut seen: HashSet<Edge> = HashSet::new();
     for p in &vault.pages {
         if !g.index.contains_key(&p.stem.to_lowercase()) {
             continue;
         }
-        // typed: frontmatter link fields
-        for (field, target) in &p.fm_links {
-            if NON_RELATION_FIELDS.contains(&field.as_str()) {
-                continue;
-            }
-            if let Some(t) = resolve(target) {
-                let rel = if field == "sources" {
-                    "cites"
-                } else {
-                    field.as_str()
-                };
-                add(&mut g, &p.stem, &t, rel);
-            }
-        }
-        // typed: inline fields in body
-        let masked = markdown::mask_comments(&markdown::mask_code(&p.doc.body));
-        for c in INLINE_FIELD_RE.captures_iter(&masked) {
-            let field = c[1].to_lowercase();
-            for target in markdown::wikilink_targets_in(&c[2]) {
-                if let Some(t) = resolve(&target) {
-                    add(&mut g, &p.stem, &t, &field);
-                }
-            }
-        }
-        // citations
-        let (cites, _) = cite::parse_citations(&p.doc.body);
-        for c in &cites {
-            if let Some(t) = resolve(&c.source) {
-                add(&mut g, &p.stem, &t, "cites");
-            }
-        }
-        // mentions
-        if include_mentions {
-            for l in &p.body_links {
-                if let Some(t) = resolve(&l.target) {
-                    add(&mut g, &p.stem, &t, "mentions");
-                }
-            }
+        for (to, rel) in page_edges(vault, p, include_mentions) {
+            g.add_edge(&mut seen, &p.stem, &to, &rel);
         }
     }
     g

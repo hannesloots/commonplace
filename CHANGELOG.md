@@ -8,6 +8,10 @@
   stdout, so an agent can branch on the code. A missing page suggests the
   closest titles. Command-line usage errors with `--json` use code `usage`.
   The codes are listed in `references/cli.md`.
+- `query --help` showed its field-comparison example in backticks
+  (`` `target_maturity>baseline_maturity` ``); typed as shown, the query
+  silently matched nothing. The help no longer shows backticks, and the
+  query parser now ignores them.
 - `COMMONPLACE_NOW` (`YYYY-MM-DD` or RFC 3339) pins the clock for every date
   the tool writes or compares, for repeatable runs and evals.
 - `--root` at a folder without `commonplace.toml` now fails with `no_root`

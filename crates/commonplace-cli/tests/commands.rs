@@ -147,3 +147,18 @@ fn pinned_clock_dates_new_pages_and_log_entries() {
         "{log}"
     );
 }
+
+#[test]
+fn query_compares_two_fields_with_or_without_backticks() {
+    let root = demo_vault();
+    for expr in [
+        "type=capability and target_maturity>baseline_maturity",
+        "type=capability and `target_maturity>baseline_maturity`",
+    ] {
+        let rows = run_json(&root, &["query", "--where", expr], 0);
+        assert!(
+            rows.to_string().contains("Customer Onboarding"),
+            "{expr}: {rows}"
+        );
+    }
+}

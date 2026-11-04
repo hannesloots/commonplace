@@ -215,7 +215,7 @@ impl Error {
             ),
             Kind::NoRoot { .. } => Some("run `commonplace init <dir>` or pass --root <dir>".into()),
             Kind::InvalidQuery { .. } => Some(
-                "syntax: field=value, field>value, `a>b`, joined with and/or/not and ( )".into(),
+                "syntax: field=value, field>other_field, tags has x, field exists; combine with and, or, not and ( )".into(),
             ),
             Kind::Frontmatter { .. } => {
                 Some("fix the YAML between the opening and closing --- lines".into())

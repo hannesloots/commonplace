@@ -59,7 +59,11 @@ pub(crate) enum Cmd {
     Index,
     /// Ranked full-text search (BM25)
     Search(SearchArgs),
-    /// Frontmatter query, e.g. --where "type=capability and `target_maturity>baseline_maturity`"
+    /// Frontmatter query, e.g. --where "type=capability and target_maturity>baseline_maturity"
+    #[expect(
+        clippy::doc_markdown,
+        reason = "clap prints this as plain help text, where backticks would be typed into the query"
+    )]
     Query(QueryArgs),
     /// Persona review packets and findings
     Review {

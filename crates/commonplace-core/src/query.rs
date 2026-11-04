@@ -35,7 +35,8 @@ fn lex(input: &str) -> Result<Vec<Tok>> {
     let mut i = 0;
     while i < cs.len() {
         let c = cs[i];
-        if c.is_whitespace() {
+        // backticks are markdown code marks (older help text showed them): skip
+        if c.is_whitespace() || c == '`' {
             i += 1;
             continue;
         }
@@ -79,7 +80,7 @@ fn lex(input: &str) -> Result<Vec<Tok>> {
         }
         let mut j = i;
         let mut word = String::new();
-        while j < cs.len() && !cs[j].is_whitespace() && !"()=!<>~\"'".contains(cs[j]) {
+        while j < cs.len() && !cs[j].is_whitespace() && !"()=!<>~\"'`".contains(cs[j]) {
             word.push(cs[j]);
             j += 1;
         }

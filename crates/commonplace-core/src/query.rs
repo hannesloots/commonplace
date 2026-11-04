@@ -306,12 +306,63 @@ pub fn eval(e: &Expr, page: &Page) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A compact rendering of the parse tree, with explicit grouping.
+    fn shape(e: &Expr) -> String {
+        match e {
+            Expr::Cmp { field, op, rhs } => {
+                let rhs = match rhs {
+                    Rhs::Lit(s) => format!(" '{s}'"),
+                    Rhs::Field(f) => format!(" @{f}"),
+                    Rhs::Bare(w) => format!(" {w}"),
+                    Rhs::None => String::new(),
+                };
+                format!("{field} {op}{rhs}")
+            }
+            Expr::And(a, b) => format!("({} AND {})", shape(a), shape(b)),
+            Expr::Or(a, b) => format!("({} OR {})", shape(a), shape(b)),
+            Expr::Not(a) => format!("NOT {}", shape(a)),
+        }
+    }
+
+    fn parsed(s: &str) -> String {
+        shape(&parse(s).unwrap())
+    }
+
     #[test]
-    fn parses() {
-        parse("type=capability and target_maturity>baseline_maturity").unwrap();
-        parse("status!=archived or tags has topic/law").unwrap();
-        parse("not (confidence=low) and folder~projects").unwrap();
-        parse("verified exists").unwrap();
-        assert!(parse("type=").is_err());
+    fn and_binds_tighter_than_or() {
+        assert_eq!(
+            parsed("type=capability or status!=archived and tags has topic/law"),
+            "(type = capability OR (status != archived AND tags has topic/law))"
+        );
+    }
+
+    #[test]
+    fn not_parentheses_and_value_kinds() {
+        assert_eq!(
+            parsed("not (confidence=low or x~\"two words\") and a>=@b"),
+            "(NOT (confidence = low OR x ~ 'two words') AND a >= @b)"
+        );
+        assert_eq!(parsed("verified exists"), "verified exists");
+        assert_eq!(parsed("a==b"), "a = b");
+    }
+
+    #[test]
+    fn backticks_are_ignored() {
+        assert_eq!(
+            parsed("`target_maturity>baseline_maturity`"),
+            "target_maturity > baseline_maturity"
+        );
+    }
+
+    #[test]
+    fn malformed_queries_are_errors() {
+        for bad in ["type=", "(a=b", "a b", "\"open", ""] {
+            assert_eq!(
+                parse(bad).map(|e| shape(&e)).map_err(|e| e.code()),
+                Err("invalid_query"),
+                "{bad}"
+            );
+        }
     }
 }

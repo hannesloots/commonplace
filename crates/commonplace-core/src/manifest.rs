@@ -4,7 +4,7 @@ use crate::fsutil;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The registry of ingested sources (`.commonplace/manifest.json`).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -38,17 +38,19 @@ pub struct SourceRecord {
     pub(crate) origin: Option<String>,
 }
 
+/// Where the manifest of the commonplace at `root` lives.
+fn manifest_path(root: &Path) -> PathBuf {
+    crate::vault::tool_dir(root).join("manifest.json")
+}
+
 impl Manifest {
-    pub(crate) fn path(root: &Path) -> std::path::PathBuf {
-        crate::vault::tool_dir(root).join("manifest.json")
-    }
     /// Load the manifest of the commonplace at `root` (empty when absent).
     ///
     /// # Errors
     ///
     /// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
     pub fn load(root: &Path) -> Result<Self> {
-        let p = Self::path(root);
+        let p = manifest_path(root);
         if !p.exists() {
             return Ok(Self::default());
         }
@@ -62,7 +64,7 @@ impl Manifest {
     /// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
     pub fn save(&self, root: &Path) -> Result<()> {
         let s = serde_json::to_string_pretty(self)?;
-        fsutil::write_atomic(&Self::path(root), s.as_bytes())
+        fsutil::write_atomic(&manifest_path(root), s.as_bytes())
     }
     pub(crate) fn find_by_hash(&self, sha: &str) -> Option<(&String, &SourceRecord)> {
         self.sources.iter().find(|(_, r)| r.raw_sha256 == sha)

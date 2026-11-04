@@ -4,7 +4,7 @@
 //! Every result carries its reason so the agent can judge, not just trust.
 
 use crate::graph::Graph;
-use crate::vault::{Resolution, Vault};
+use crate::vault::{Page, Resolution, Vault};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -153,109 +153,19 @@ impl Net {
         let mut membership: Vec<usize> = (0..self.n).collect();
         for _level in 0..20 {
             let n = adj.len();
-            if n == 0 {
+            let Some(comm) = louvain_local_moves(&adj) else {
                 break;
-            }
-            // self loops are stored as (i, i, w) and count twice in the strength
-            let k: Vec<f64> = (0..n)
-                .map(|i| {
-                    adj[i]
-                        .iter()
-                        .map(|(j, w)| if *j == i { 2.0 * w } else { *w })
-                        .sum()
-                })
-                .collect();
-            let two_m: f64 = k.iter().sum();
-            if two_m == 0.0 {
-                break;
-            }
-            let mut comm: Vec<usize> = (0..n).collect();
-            let mut tot: Vec<f64> = k.clone();
-            let mut moved_any = false;
-            for _pass in 0..50 {
-                let mut moved = false;
-                for i in 0..n {
-                    let ci = comm[i];
-                    tot[ci] -= k[i];
-                    let mut k_in: BTreeMap<usize, f64> = BTreeMap::new();
-                    for &(j, w) in &adj[i] {
-                        if j != i {
-                            *k_in.entry(comm[j]).or_default() += w;
-                        }
-                    }
-                    let gain =
-                        |c: usize| k_in.get(&c).copied().unwrap_or(0.0) - tot[c] * k[i] / two_m;
-                    let mut best = ci;
-                    let mut best_gain = gain(ci);
-                    for &c in k_in.keys() {
-                        let g = gain(c);
-                        if g > best_gain + 1e-12 {
-                            best_gain = g;
-                            best = c;
-                        }
-                    }
-                    tot[best] += k[i];
-                    if best != ci {
-                        comm[i] = best;
-                        moved = true;
-                        moved_any = true;
-                    }
-                }
-                if !moved {
-                    break;
-                }
-            }
-            if !moved_any {
-                break;
-            }
-            // renumber and aggregate
-            let mut renum: HashMap<usize, usize> = HashMap::new();
-            for &c in &comm {
-                let next = renum.len();
-                renum.entry(c).or_insert(next);
-            }
-            let comm: Vec<usize> = comm.iter().map(|c| renum[c]).collect();
+            };
+            let (comm, nc) = renumber_first_seen(&comm);
             for m in &mut membership {
                 *m = comm[*m];
             }
-            let nc = renum.len();
-            let mut agg: Vec<HashMap<usize, f64>> = vec![HashMap::new(); nc];
-            for i in 0..n {
-                for &(j, w) in &adj[i] {
-                    let (a, b) = (comm[i], comm[j]);
-                    if i == j {
-                        *agg[a].entry(a).or_default() += w;
-                    } else if i < j {
-                        if a == b {
-                            *agg[a].entry(a).or_default() += w;
-                        } else {
-                            *agg[a].entry(b).or_default() += w;
-                            *agg[b].entry(a).or_default() += w;
-                        }
-                    }
-                }
-            }
-            adj = agg
-                .into_iter()
-                .map(|m| {
-                    let mut v: Vec<(usize, f64)> = m.into_iter().collect();
-                    v.sort_by_key(|x| x.0);
-                    v
-                })
-                .collect();
+            adj = louvain_aggregate(&adj, &comm, nc);
             if nc == n {
                 break;
             }
         }
-        // final renumber by first appearance
-        let mut renum: HashMap<usize, usize> = HashMap::new();
-        membership
-            .iter()
-            .map(|m| {
-                let next = renum.len();
-                *renum.entry(*m).or_insert(next)
-            })
-            .collect()
+        renumber_first_seen(&membership).0
     }
 
     /// Betweenness centrality (Brandes, unweighted). Sampled above 2000 nodes.
@@ -308,6 +218,109 @@ impl Net {
     }
 }
 
+/// One Louvain level: move each node to the neighbouring community with the best
+/// modularity gain until nothing moves. `None` when the graph is empty or
+/// edgeless, or when no node moved at all.
+fn louvain_local_moves(adj: &[Vec<(usize, f64)>]) -> Option<Vec<usize>> {
+    let n = adj.len();
+    if n == 0 {
+        return None;
+    }
+    // self loops are stored as (i, i, w) and count twice in the strength
+    let k: Vec<f64> = (0..n)
+        .map(|i| {
+            adj[i]
+                .iter()
+                .map(|(j, w)| if *j == i { 2.0 * w } else { *w })
+                .sum()
+        })
+        .collect();
+    let two_m: f64 = k.iter().sum();
+    if two_m == 0.0 {
+        return None;
+    }
+    let mut comm: Vec<usize> = (0..n).collect();
+    let mut tot: Vec<f64> = k.clone();
+    let mut moved_any = false;
+    for _pass in 0..50 {
+        let mut moved = false;
+        for i in 0..n {
+            let ci = comm[i];
+            tot[ci] -= k[i];
+            let mut k_in: BTreeMap<usize, f64> = BTreeMap::new();
+            for &(j, w) in &adj[i] {
+                if j != i {
+                    *k_in.entry(comm[j]).or_default() += w;
+                }
+            }
+            let gain = |c: usize| k_in.get(&c).copied().unwrap_or(0.0) - tot[c] * k[i] / two_m;
+            let mut best = ci;
+            let mut best_gain = gain(ci);
+            for &c in k_in.keys() {
+                let g = gain(c);
+                if g > best_gain + 1e-12 {
+                    best_gain = g;
+                    best = c;
+                }
+            }
+            tot[best] += k[i];
+            if best != ci {
+                comm[i] = best;
+                moved = true;
+                moved_any = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    moved_any.then_some(comm)
+}
+
+/// Relabel ids as 0, 1, 2, … in order of first appearance; also returns the number of labels.
+fn renumber_first_seen(ids: &[usize]) -> (Vec<usize>, usize) {
+    let mut renum: HashMap<usize, usize> = HashMap::new();
+    let out = ids
+        .iter()
+        .map(|id| {
+            let next = renum.len();
+            *renum.entry(*id).or_insert(next)
+        })
+        .collect();
+    (out, renum.len())
+}
+
+/// Collapse each community into one node; internal edges become a self loop.
+fn louvain_aggregate(
+    adj: &[Vec<(usize, f64)>],
+    comm: &[usize],
+    nc: usize,
+) -> Vec<Vec<(usize, f64)>> {
+    let mut agg: Vec<HashMap<usize, f64>> = vec![HashMap::new(); nc];
+    for (i, edges) in adj.iter().enumerate() {
+        for &(j, w) in edges {
+            let (a, b) = (comm[i], comm[j]);
+            if i == j {
+                *agg[a].entry(a).or_default() += w;
+            } else if i < j {
+                if a == b {
+                    *agg[a].entry(a).or_default() += w;
+                } else {
+                    *agg[a].entry(b).or_default() += w;
+                    *agg[b].entry(a).or_default() += w;
+                }
+            }
+        }
+    }
+    agg.into_iter()
+        .map(|m| {
+            let mut v: Vec<(usize, f64)> = m.into_iter().collect();
+            v.sort_by_key(|x| x.0);
+            v
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RelatedRow {
     pub node: String,
@@ -321,60 +334,89 @@ pub struct RelatedRow {
 /// Adamic-Adar shared neighbours, shared tags, random-walk proximity.
 pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec<RelatedRow>> {
     let net = Net::from_graph(g);
-    let &p = net.id_of.get(&page.to_lowercase())?;
-    let sources_of = |i: usize| -> BTreeSet<String> {
-        g.edges
+    let &focus = net.id_of.get(&page.to_lowercase())?;
+    let r = Relatedness::new(g, vault, &net, focus);
+    let mut rows: Vec<RelatedRow> = r
+        .candidates()
+        .into_iter()
+        .filter_map(|c| r.row(c))
+        .collect();
+    rows.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.node.cmp(&b.node)));
+    rows.truncate(limit);
+    Some(rows)
+}
+
+/// Everything `related` knows about the focus page, to score each candidate.
+struct Relatedness<'a> {
+    g: &'a Graph,
+    vault: &'a Vault,
+    net: &'a Net,
+    focus: usize,
+    focus_sources: BTreeSet<String>,
+    focus_tags: BTreeSet<String>,
+    /// Personalised `PageRank` from the focus page.
+    ppr: Vec<f64>,
+    /// The highest `ppr` of any other page, to normalise proximity.
+    ppr_max: f64,
+    /// Relations on direct edges between the focus and each neighbour.
+    direct: HashMap<usize, BTreeSet<String>>,
+}
+
+impl<'a> Relatedness<'a> {
+    fn new(g: &'a Graph, vault: &'a Vault, net: &'a Net, focus: usize) -> Self {
+        let ppr = net.personalised_pagerank(&[focus], 0.85);
+        let ppr_max = ppr
             .iter()
-            .filter(|e| e.rel == "cites" && e.from.eq_ignore_ascii_case(&g.nodes[i].id))
+            .enumerate()
+            .filter(|(i, _)| *i != focus)
+            .map(|(_, v)| *v)
+            .fold(0.0, f64::max);
+        let mut r = Relatedness {
+            g,
+            vault,
+            net,
+            focus,
+            focus_sources: BTreeSet::new(),
+            focus_tags: BTreeSet::new(),
+            ppr,
+            ppr_max,
+            direct: HashMap::new(),
+        };
+        r.focus_sources = r.sources_of(focus);
+        r.focus_tags = r.tags_of(focus);
+        r.direct = r.direct_relations();
+        r
+    }
+
+    /// Sources cited by node `i` (lowercase ids).
+    fn sources_of(&self, i: usize) -> BTreeSet<String> {
+        let id = &self.g.nodes[i].id;
+        self.g
+            .edges
+            .iter()
+            .filter(|e| e.rel == "cites" && e.from.eq_ignore_ascii_case(id))
             .map(|e| e.to.to_lowercase())
             .collect()
-    };
-    let tags_of = |i: usize| -> BTreeSet<String> {
-        vault
-            .resolve_page(&g.nodes[i].id)
+    }
+
+    fn tags_of(&self, i: usize) -> BTreeSet<String> {
+        self.vault
+            .resolve_page(&self.g.nodes[i].id)
             .map(|pg| pg.tags.iter().map(|t| t.to_lowercase()).collect())
             .unwrap_or_default()
-    };
-    let p_sources = sources_of(p);
-    let p_tags = tags_of(p);
-    let ppr = net.personalised_pagerank(&[p], 0.85);
-    let ppr_max = ppr
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != p)
-        .map(|(_, v)| *v)
-        .fold(0.0, f64::max);
-    // candidates: 2-hop neighbourhood, co-citers, tag sharers, top random-walk nodes
-    let mut cands: BTreeSet<usize> = BTreeSet::new();
-    for &(j, _) in &net.adj[p] {
-        cands.insert(j);
-        for &(k, _) in &net.adj[j] {
-            cands.insert(k);
-        }
     }
-    let mut order: Vec<usize> = (0..net.n).collect();
-    order.sort_by(|a, b| ppr[*b].total_cmp(&ppr[*a]));
-    cands.extend(order.iter().take(30).copied());
-    for i in 0..net.n {
-        if i != p
-            && (!p_sources.is_empty() && !sources_of(i).is_disjoint(&p_sources)
-                || !p_tags.is_empty() && !tags_of(i).is_disjoint(&p_tags))
-        {
-            cands.insert(i);
-        }
-    }
-    cands.remove(&p);
-    let direct: HashMap<usize, BTreeSet<String>> = {
+
+    fn direct_relations(&self) -> HashMap<usize, BTreeSet<String>> {
         let mut m: HashMap<usize, BTreeSet<String>> = HashMap::new();
-        let pid = g.nodes[p].id.to_lowercase();
-        for e in &g.edges {
-            let (f, t) = (e.from.to_lowercase(), e.to.to_lowercase());
-            if f == pid {
-                if let Some(&j) = net.id_of.get(&t) {
+        let focus_id = self.g.nodes[self.focus].id.to_lowercase();
+        for e in &self.g.edges {
+            let (from, to) = (e.from.to_lowercase(), e.to.to_lowercase());
+            if from == focus_id {
+                if let Some(&j) = self.net.id_of.get(&to) {
                     m.entry(j).or_default().insert(e.rel.clone());
                 }
-            } else if t == pid
-                && let Some(&j) = net.id_of.get(&f)
+            } else if to == focus_id
+                && let Some(&j) = self.net.id_of.get(&from)
             {
                 m.entry(j)
                     .or_default()
@@ -382,25 +424,56 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
             }
         }
         m
-    };
-    let mut rows = vec![];
-    for c in cands {
+    }
+
+    /// The 2-hop neighbourhood, the top random-walk nodes, co-citers and tag sharers.
+    fn candidates(&self) -> BTreeSet<usize> {
+        let (net, focus) = (self.net, self.focus);
+        let mut cands: BTreeSet<usize> = BTreeSet::new();
+        for &(j, _) in &net.adj[focus] {
+            cands.insert(j);
+            cands.extend(net.adj[j].iter().map(|&(k, _)| k));
+        }
+        let mut order: Vec<usize> = (0..net.n).collect();
+        order.sort_by(|x, y| self.ppr[*y].total_cmp(&self.ppr[*x]));
+        cands.extend(order.iter().take(30).copied());
+        for i in 0..net.n {
+            if i != focus
+                && (!self.focus_sources.is_empty()
+                    && !self.sources_of(i).is_disjoint(&self.focus_sources)
+                    || !self.focus_tags.is_empty()
+                        && !self.tags_of(i).is_disjoint(&self.focus_tags))
+            {
+                cands.insert(i);
+            }
+        }
+        cands.remove(&focus);
+        cands
+    }
+
+    /// Score candidate `c` with its reasons; `None` when nothing relates it.
+    fn row(&self, c: usize) -> Option<RelatedRow> {
+        let g = self.g;
         let mut score = 0.0;
         let mut reasons = vec![];
-        if let Some(rels) = direct.get(&c) {
+        if let Some(rels) = self.direct.get(&c) {
             score += crate::count_f64(rels.len());
             reasons.push(format!(
                 "linked: {}",
                 rels.iter().cloned().collect::<Vec<_>>().join(", ")
             ));
         }
-        let shared_src: Vec<String> = p_sources.intersection(&sources_of(c)).cloned().collect();
+        let shared_src: Vec<String> = self
+            .focus_sources
+            .intersection(&self.sources_of(c))
+            .cloned()
+            .collect();
         if !shared_src.is_empty() {
             score += 0.4 * crate::count_f64(shared_src.len());
             reasons.push(format!(
                 "cites {} same source{}: {}",
                 shared_src.len(),
-                if shared_src.len() == 1 { "" } else { "s" },
+                plural(shared_src.len()),
                 shared_src
                     .iter()
                     .take(3)
@@ -409,47 +482,51 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
                     .join("; ")
             ));
         }
-        let (aa, shared) = net.adamic_adar(p, c);
+        let (aa, shared) = self.net.adamic_adar(self.focus, c);
         if aa > 0.0 {
             score += 0.5 * aa;
             reasons.push(format!(
                 "{} shared neighbour{} (Adamic-Adar {:.2}): {}",
                 shared.len(),
-                if shared.len() == 1 { "" } else { "s" },
+                plural(shared.len()),
                 aa,
                 shared
                     .iter()
                     .take(3)
-                    .map(|&z| g.nodes[z].id.clone())
+                    .map(|&z| g.nodes[z].id.as_str())
                     .collect::<Vec<_>>()
                     .join("; ")
             ));
         }
-        let shared_tags: Vec<String> = p_tags.intersection(&tags_of(c)).cloned().collect();
+        let shared_tags: Vec<String> = self
+            .focus_tags
+            .intersection(&self.tags_of(c))
+            .cloned()
+            .collect();
         if !shared_tags.is_empty() {
             score += 0.2 * crate::count_f64(shared_tags.len());
             reasons.push(format!("shares tags {}", shared_tags.join(", ")));
         }
-        if ppr_max > 0.0 && ppr[c] > 0.0 {
-            let r = ppr[c] / ppr_max;
-            if r > 0.05 {
-                score += r;
-                reasons.push(format!("random-walk proximity {r:.2}"));
+        if self.ppr_max > 0.0 && self.ppr[c] > 0.0 {
+            let proximity = self.ppr[c] / self.ppr_max;
+            if proximity > 0.05 {
+                score += proximity;
+                reasons.push(format!("random-walk proximity {proximity:.2}"));
             }
         }
-        if score > 0.0 {
-            rows.push(RelatedRow {
-                node: g.nodes[c].id.clone(),
-                label: g.nodes[c].label.clone(),
-                score: (score * 100.0).round() / 100.0,
-                reasons,
-                description: g.nodes[c].description.clone(),
-            });
-        }
+        (score > 0.0).then(|| RelatedRow {
+            node: g.nodes[c].id.clone(),
+            label: g.nodes[c].label.clone(),
+            score: (score * 100.0).round() / 100.0,
+            reasons,
+            description: g.nodes[c].description.clone(),
+        })
     }
-    rows.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.node.cmp(&b.node)));
-    rows.truncate(limit);
-    Some(rows)
+}
+
+/// "s" unless `n` is 1.
+fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
 }
 
 fn display_id(g: &Graph, lower: &str) -> String {
@@ -568,8 +645,8 @@ pub struct Gaps {
     pub bridges: Vec<HubRow>,
 }
 
-pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
-    // wanted pages: unresolved link targets ranked by distinct referrers
+/// Unresolved link targets, ranked by how many distinct pages want them.
+fn wanted_pages(vault: &Vault) -> Vec<Wanted> {
     let mut wanted: BTreeMap<String, (String, BTreeSet<String>)> = BTreeMap::new();
     for p in &vault.pages {
         if p.parse_error.is_some() || p.rel == "index.md" || p.rel.starts_with("indexes/") {
@@ -598,7 +675,23 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
             .cmp(&a.referrers.len())
             .then(a.target.cmp(&b.target))
     });
+    wanted
+}
 
+/// The ten pages with the highest betweenness: they connect otherwise separate areas.
+fn bridges(g: &Graph) -> Vec<HubRow> {
+    let mut bridges = hubs(g, usize::MAX);
+    bridges.sort_by(|a, b| {
+        b.betweenness
+            .total_cmp(&a.betweenness)
+            .then(a.node.cmp(&b.node))
+    });
+    bridges.retain(|b| b.betweenness > 0.0);
+    bridges.truncate(10);
+    bridges
+}
+
+pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
     let net = Net::from_graph(g);
     let mut indeg = vec![0usize; net.n];
     let mut outdeg = vec![0usize; net.n];
@@ -623,20 +716,17 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
                     && !["source", "journal", "capture"].contains(&p.ptype.as_str())
             })
     };
-    let orphans: Vec<String> = (0..net.n)
-        .filter(|&i| indeg[i] == 0 && is_knowledge(i) && !archived(i))
-        .map(|i| g.nodes[i].id.clone())
-        .collect();
-    let dead_ends: Vec<String> = (0..net.n)
-        .filter(|&i| outdeg[i] == 0 && is_knowledge(i) && !archived(i))
-        .map(|i| g.nodes[i].id.clone())
-        .collect();
-    let uncited_sources: Vec<String> = (0..net.n)
-        .filter(|&i| {
-            g.nodes[i].label == "source" && indeg[i] == 0 && g.nodes[i].status != "superseded"
-        })
-        .map(|i| g.nodes[i].id.clone())
-        .collect();
+    let ids = |keep: &dyn Fn(usize) -> bool| -> Vec<String> {
+        (0..net.n)
+            .filter(|&i| keep(i))
+            .map(|i| g.nodes[i].id.clone())
+            .collect()
+    };
+    let orphans = ids(&|i| indeg[i] == 0 && is_knowledge(i) && !archived(i));
+    let dead_ends = ids(&|i| outdeg[i] == 0 && is_knowledge(i) && !archived(i));
+    let uncited_sources = ids(&|i| {
+        g.nodes[i].label == "source" && indeg[i] == 0 && g.nodes[i].status != "superseded"
+    });
 
     let comms = communities(g, 3);
     let communities_without_hub: Vec<Community> =
@@ -647,23 +737,14 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
         .cloned()
         .collect();
 
-    let mut bridges = hubs(g, usize::MAX);
-    bridges.sort_by(|a, b| {
-        b.betweenness
-            .total_cmp(&a.betweenness)
-            .then(a.node.cmp(&b.node))
-    });
-    bridges.retain(|b| b.betweenness > 0.0);
-    bridges.truncate(10);
-
     Gaps {
-        wanted,
+        wanted: wanted_pages(vault),
         orphans,
         dead_ends,
         uncited_sources,
         communities_without_hub,
         single_source_communities,
-        bridges,
+        bridges: bridges(g),
     }
 }
 
@@ -708,6 +789,79 @@ fn mask_keep_len(text: &str, re: &Regex) -> String {
     out
 }
 
+/// A compiled matcher for every linkable page name.
+struct MentionMatcher {
+    re: Regex,
+    /// Lowercase name -> target page id.
+    lookup: HashMap<String, String>,
+}
+
+impl MentionMatcher {
+    /// Multi-word names match case-insensitively. A single word only counts
+    /// when it is a proper noun or acronym (has a capital) and then matches
+    /// exactly, so an alias like "excess" cannot flood the prose with hits.
+    /// `None` when there is nothing to match.
+    fn new(g: &Graph, vault: &Vault) -> Option<Self> {
+        let mut multi: Vec<(String, String)> = vec![]; // (lowercase name, target id)
+        let mut single: Vec<(String, String)> = vec![]; // (exact name, target id)
+        for n in &g.nodes {
+            if ["source", "journal", "profile", "preferences", "glossary"]
+                .contains(&n.label.as_str())
+            {
+                continue;
+            }
+            let Some(p) = vault.resolve_page(&n.id) else {
+                continue;
+            };
+            for name in [&p.stem, &p.title].into_iter().chain(&p.aliases) {
+                let name = name.trim();
+                if name.chars().count() < 4 || !name.chars().any(char::is_alphabetic) {
+                    continue;
+                }
+                if name.contains(char::is_whitespace) {
+                    multi.push((name.to_lowercase(), n.id.clone()));
+                } else if name.chars().any(char::is_uppercase) {
+                    single.push((name.to_string(), n.id.clone()));
+                }
+            }
+        }
+        for v in [&mut multi, &mut single] {
+            v.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.0.cmp(&b.0)));
+            v.dedup_by(|a, b| a.0 == b.0);
+        }
+        let alt = |v: &[(String, String)]| {
+            v.iter()
+                .map(|(n, _)| regex::escape(n))
+                .collect::<Vec<_>>()
+                .join("|")
+        };
+        let pattern = match (multi.is_empty(), single.is_empty()) {
+            (true, true) => return None,
+            (false, false) => format!(r"\b(?:(?i:{})|(?:{}))\b", alt(&multi), alt(&single)),
+            (false, true) => format!(r"(?i)\b(?:{})\b", alt(&multi)),
+            (true, false) => format!(r"\b(?:{})\b", alt(&single)),
+        };
+        let re = Regex::new(&pattern).ok()?;
+        let lookup = multi
+            .into_iter()
+            .chain(single.into_iter().map(|(n, t)| (n.to_lowercase(), t)))
+            .collect();
+        Some(MentionMatcher { re, lookup })
+    }
+}
+
+/// Whether `p` is a page whose prose should be scanned for mentions.
+fn scans_for_mentions(g: &Graph, p: &Page, only_page: Option<&str>) -> bool {
+    if p.parse_error.is_some()
+        || g.node(&p.stem).is_none()
+        || ["source", "journal", "capture"].contains(&p.ptype.as_str())
+    {
+        return false;
+    }
+    only_page
+        .is_none_or(|only| p.stem.eq_ignore_ascii_case(only) || p.rel.eq_ignore_ascii_case(only))
+}
+
 /// Unlinked mentions: occurrences of another page's title or alias in a
 /// page's prose that are not already links, with the line to put the link
 /// on. The highest-yield "missing cross-reference" signal.
@@ -717,73 +871,15 @@ pub fn suggest_links(
     only_page: Option<&str>,
     limit: usize,
 ) -> Vec<LinkSuggestion> {
-    // Multi-word names match case-insensitively. A single word only counts
-    // when it is a proper noun or acronym (has a capital) and then matches
-    // exactly, so an alias like "excess" cannot flood the prose with hits.
-    let mut multi: Vec<(String, String)> = vec![]; // (lowercase name, target id)
-    let mut single: Vec<(String, String)> = vec![]; // (exact name, target id)
-    for n in &g.nodes {
-        if ["source", "journal", "profile", "preferences", "glossary"].contains(&n.label.as_str()) {
-            continue;
-        }
-        let Some(p) = vault.resolve_page(&n.id) else {
-            continue;
-        };
-        for name in std::iter::once(p.stem.clone())
-            .chain(std::iter::once(p.title.clone()))
-            .chain(p.aliases.iter().cloned())
-        {
-            let name = name.trim().to_string();
-            if name.chars().count() < 4 || !name.chars().any(char::is_alphabetic) {
-                continue;
-            }
-            if name.contains(char::is_whitespace) {
-                multi.push((name.to_lowercase(), n.id.clone()));
-            } else if name.chars().any(char::is_uppercase) {
-                single.push((name.clone(), n.id.clone()));
-            }
-        }
-    }
-    for v in [&mut multi, &mut single] {
-        v.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.0.cmp(&b.0)));
-        v.dedup_by(|a, b| a.0 == b.0);
-    }
-    if multi.is_empty() && single.is_empty() {
-        return vec![];
-    }
-    let lookup: HashMap<String, String> = multi
-        .iter()
-        .cloned()
-        .chain(single.iter().map(|(n, t)| (n.to_lowercase(), t.clone())))
-        .collect();
-    let alt = |v: &[(String, String)]| {
-        v.iter()
-            .map(|(n, _)| regex::escape(n))
-            .collect::<Vec<_>>()
-            .join("|")
-    };
-    let pattern = match (multi.is_empty(), single.is_empty()) {
-        (false, false) => format!(r"\b(?:(?i:{})|(?:{}))\b", alt(&multi), alt(&single)),
-        (false, true) => format!(r"(?i)\b(?:{})\b", alt(&multi)),
-        _ => format!(r"\b(?:{})\b", alt(&single)),
-    };
-    let Ok(re) = Regex::new(&pattern) else {
+    let Some(matcher) = MentionMatcher::new(g, vault) else {
         return vec![];
     };
     let mut out = vec![];
-    for p in &vault.pages {
-        if p.parse_error.is_some()
-            || g.node(&p.stem).is_none()
-            || ["source", "journal", "capture"].contains(&p.ptype.as_str())
-        {
-            continue;
-        }
-        if let Some(only) = only_page
-            && !p.stem.eq_ignore_ascii_case(only)
-            && !p.rel.eq_ignore_ascii_case(only)
-        {
-            continue;
-        }
+    for p in vault
+        .pages
+        .iter()
+        .filter(|p| scans_for_mentions(g, p, only_page))
+    {
         let already: HashSet<String> = p
             .all_link_targets()
             .iter()
@@ -794,8 +890,8 @@ pub fn suggest_links(
             masked = mask_keep_len(&masked, r);
         }
         let mut seen: HashSet<String> = HashSet::new();
-        for m in re.find_iter(&masked) {
-            let Some(target) = lookup.get(&m.as_str().to_lowercase()) else {
+        for m in matcher.re.find_iter(&masked) {
+            let Some(target) = matcher.lookup.get(&m.as_str().to_lowercase()) else {
                 continue;
             };
             let tl = target.to_lowercase();
@@ -839,10 +935,9 @@ pub struct ConflictCandidate {
     pub updated: (String, String),
 }
 
-/// Page pairs worth comparing for contradiction or staleness: same type,
-/// overlapping evidence or subject, no recorded contradiction between them.
-pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
-    let eligible: Vec<usize> = vault
+/// Pages that can contradict each other: knowledge pages, not navigation or raw material.
+fn conflict_eligible(vault: &Vault) -> Vec<usize> {
+    vault
         .pages
         .iter()
         .enumerate()
@@ -854,10 +949,14 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
                     .contains(&p.ptype.as_str())
         })
         .map(|(i, _)| i)
-        .collect();
+        .collect()
+}
+
+/// Same-type page pairs that share a source or a tag.
+fn conflict_pairs(vault: &Vault, eligible: &[usize]) -> BTreeSet<(usize, usize)> {
     let mut by_source: HashMap<String, Vec<usize>> = HashMap::new();
     let mut by_tag: HashMap<String, Vec<usize>> = HashMap::new();
-    for &i in &eligible {
+    for &i in eligible {
         let p = &vault.pages[i];
         for s in p.list("sources") {
             if let Some(q) = vault.resolve_page(&s) {
@@ -870,98 +969,109 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
     }
     let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
     for v in by_source.values().chain(by_tag.values()) {
-        for x in 0..v.len() {
-            for y in x + 1..v.len() {
-                let (a, b) = (v[x].min(v[y]), v[x].max(v[y]));
+        for (x, &first) in v.iter().enumerate() {
+            for &second in &v[x + 1..] {
+                let (a, b) = (first.min(second), first.max(second));
                 if a != b && vault.pages[a].ptype == vault.pages[b].ptype {
                     pairs.insert((a, b));
                 }
             }
         }
     }
-    let tokens = |s: &str| -> HashSet<String> {
-        s.to_lowercase()
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|w| w.len() > 3)
-            .map(std::string::ToString::to_string)
-            .collect()
-    };
-    let mut out = vec![];
-    for (a, b) in pairs {
-        let (pa, pb) = (&vault.pages[a], &vault.pages[b]);
-        let recorded = |p: &crate::vault::Page, other: &str| {
-            p.fm_links.iter().any(|(f, t)| {
-                f == "contradictions"
-                    && vault
-                        .resolve_page(t)
-                        .is_some_and(|q| q.stem.eq_ignore_ascii_case(other))
-            }) || p
-                .get("superseded_by")
-                .is_some_and(|s| s.to_lowercase().contains(&other.to_lowercase()))
-        };
-        if recorded(pa, &pb.stem) || recorded(pb, &pa.stem) {
-            continue;
-        }
-        let mut score = 0.0;
-        let mut reasons = vec![];
-        let sa: HashSet<String> = pa
-            .list("sources")
-            .iter()
-            .filter_map(|s| vault.resolve_page(s).map(|q| q.stem.to_lowercase()))
-            .collect();
-        let sb: HashSet<String> = pb
-            .list("sources")
-            .iter()
-            .filter_map(|s| vault.resolve_page(s).map(|q| q.stem.to_lowercase()))
-            .collect();
-        let shared = sa.intersection(&sb).count();
-        if shared > 0 {
-            score += 1.0 + 0.3 * crate::count_f64(shared);
-            reasons.push(format!(
-                "{shared} shared source{}",
-                if shared == 1 { "" } else { "s" }
-            ));
-        }
-        let jw = strsim::jaro_winkler(&pa.title.to_lowercase(), &pb.title.to_lowercase());
-        if jw > 0.85 {
-            score += 1.5;
-            reasons.push(format!("titles nearly identical ({jw:.2})"));
-        }
-        let (ta, tb) = (
-            tokens(&pa.get("description").unwrap_or_default()),
-            tokens(&pb.get("description").unwrap_or_default()),
-        );
-        if !ta.is_empty() && !tb.is_empty() {
-            let j = crate::count_f64(ta.intersection(&tb).count())
-                / crate::count_f64(ta.union(&tb).count());
-            if j >= 0.3 {
-                score += j * 2.0;
-                reasons.push(format!("descriptions overlap ({:.0}%)", j * 100.0));
-            }
-        }
-        let shared_tags = pa.tags.iter().filter(|t| pb.tags.contains(t)).count();
-        if shared_tags >= 2 {
-            score += 0.2 * crate::count_f64(shared_tags);
-            reasons.push(format!("{shared_tags} shared tags"));
-        }
-        let (ua, ub) = (
-            pa.get("updated").unwrap_or_default(),
-            pb.get("updated").unwrap_or_default(),
-        );
-        if !ua.is_empty() && !ub.is_empty() && ua != ub && score > 0.0 {
-            reasons.push(format!("updated on different dates ({ua} vs {ub})"));
-        }
-        if score >= 1.3 {
-            out.push(ConflictCandidate {
-                a: pa.stem.clone(),
-                b: pb.stem.clone(),
-                ptype: pa.ptype.clone(),
-                score: (score * 100.0).round() / 100.0,
-                reasons,
-                updated: (ua, ub),
-            });
+    pairs
+}
+
+/// Whether `p` already records a contradiction with, or supersession by, the page `other`.
+fn relation_recorded(vault: &Vault, p: &Page, other: &str) -> bool {
+    p.fm_links.iter().any(|(f, t)| {
+        f == "contradictions"
+            && vault
+                .resolve_page(t)
+                .is_some_and(|q| q.stem.eq_ignore_ascii_case(other))
+    }) || p
+        .get("superseded_by")
+        .is_some_and(|s| s.to_lowercase().contains(&other.to_lowercase()))
+}
+
+/// Description words longer than three characters, lowercased.
+fn description_tokens(p: &Page) -> HashSet<String> {
+    p.get("description")
+        .unwrap_or_default()
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() > 3)
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn resolved_sources(vault: &Vault, p: &Page) -> HashSet<String> {
+    p.list("sources")
+        .iter()
+        .filter_map(|s| vault.resolve_page(s).map(|q| q.stem.to_lowercase()))
+        .collect()
+}
+
+/// Score a pair by shared sources, title similarity, description overlap and shared tags.
+fn score_conflict(vault: &Vault, pa: &Page, pb: &Page) -> Option<ConflictCandidate> {
+    let mut score = 0.0;
+    let mut reasons = vec![];
+    let shared = resolved_sources(vault, pa)
+        .intersection(&resolved_sources(vault, pb))
+        .count();
+    if shared > 0 {
+        score += 1.0 + 0.3 * crate::count_f64(shared);
+        reasons.push(format!("{shared} shared source{}", plural(shared)));
+    }
+    let jw = strsim::jaro_winkler(&pa.title.to_lowercase(), &pb.title.to_lowercase());
+    if jw > 0.85 {
+        score += 1.5;
+        reasons.push(format!("titles nearly identical ({jw:.2})"));
+    }
+    let (ta, tb) = (description_tokens(pa), description_tokens(pb));
+    if !ta.is_empty() && !tb.is_empty() {
+        let overlap = crate::count_f64(ta.intersection(&tb).count())
+            / crate::count_f64(ta.union(&tb).count());
+        if overlap >= 0.3 {
+            score += overlap * 2.0;
+            reasons.push(format!("descriptions overlap ({:.0}%)", overlap * 100.0));
         }
     }
+    let shared_tags = pa.tags.iter().filter(|t| pb.tags.contains(t)).count();
+    if shared_tags >= 2 {
+        score += 0.2 * crate::count_f64(shared_tags);
+        reasons.push(format!("{shared_tags} shared tags"));
+    }
+    let (ua, ub) = (
+        pa.get("updated").unwrap_or_default(),
+        pb.get("updated").unwrap_or_default(),
+    );
+    if !ua.is_empty() && !ub.is_empty() && ua != ub && score > 0.0 {
+        reasons.push(format!("updated on different dates ({ua} vs {ub})"));
+    }
+    (score >= 1.3).then(|| ConflictCandidate {
+        a: pa.stem.clone(),
+        b: pb.stem.clone(),
+        ptype: pa.ptype.clone(),
+        score: (score * 100.0).round() / 100.0,
+        reasons,
+        updated: (ua, ub),
+    })
+}
+
+/// Page pairs worth comparing for contradiction or staleness: same type,
+/// overlapping evidence or subject, no recorded contradiction between them.
+pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
+    let eligible = conflict_eligible(vault);
+    let mut out: Vec<ConflictCandidate> = conflict_pairs(vault, &eligible)
+        .into_iter()
+        .filter_map(|(a, b)| {
+            let (pa, pb) = (&vault.pages[a], &vault.pages[b]);
+            if relation_recorded(vault, pa, &pb.stem) || relation_recorded(vault, pb, &pa.stem) {
+                return None;
+            }
+            score_conflict(vault, pa, pb)
+        })
+        .collect();
     out.sort_by(|x, y| y.score.total_cmp(&x.score).then(x.a.cmp(&y.a)));
     out.truncate(limit);
     out
@@ -970,6 +1080,13 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renumbering_labels_by_first_appearance() {
+        let (ids, count) = renumber_first_seen(&[7, 3, 7, 9, 3]);
+        assert_eq!(ids, [0, 1, 0, 2, 1]);
+        assert_eq!(count, 3);
+    }
 
     fn net(edges: &[(usize, usize)], n: usize) -> Net {
         let mut adj = vec![vec![]; n];

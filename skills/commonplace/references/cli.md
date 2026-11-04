@@ -5,6 +5,11 @@ Launcher: `scripts/commonplace` (POSIX) or `scripts/commonplace.ps1` (Windows). 
 `--json` to any command for machine-readable output. `--root <path>` overrides
 root discovery (otherwise the tool walks up from the cwd to find `commonplace.toml`).
 
+Environment: `COMMONPLACE_NOW` pins the clock (`YYYY-MM-DD` or an RFC 3339
+timestamp) for every date the tool writes or compares (`created`, `updated`,
+log entries, staleness checks). Use it for repeatable runs; an unparseable
+value is ignored and the real clock is used.
+
 Exit codes: `0` ok · `1` findings at error level (lint, cite, links, review
 blockers) · `2` the command failed (see the error code) · `3` integrity violation
 (a raw original or text layer changed since ingest: stop and tell the user).

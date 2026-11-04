@@ -8,6 +8,8 @@
   stdout, so an agent can branch on the code. A missing page suggests the
   closest titles. Command-line usage errors with `--json` use code `usage`.
   The codes are listed in `references/cli.md`.
+- `COMMONPLACE_NOW` (`YYYY-MM-DD` or RFC 3339) pins the clock for every date
+  the tool writes or compares, for repeatable runs and evals.
 - `--root` at a folder without `commonplace.toml` now fails with `no_root`
   instead of an I/O error.
 - `export` renumbered footnotes one label at a time, so a page that defined

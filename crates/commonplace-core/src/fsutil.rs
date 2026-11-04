@@ -1,8 +1,10 @@
 //! Small filesystem helpers: atomic writes, hashing, slugs, path display.
 
 use crate::{Error, Result};
+use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveTime, TimeZone};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::LazyLock;
 
 pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
@@ -80,12 +82,42 @@ pub fn safe_title(s: &str) -> String {
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-pub fn today() -> String {
-    chrono::Local::now().format("%Y-%m-%d").to_string()
+/// Environment variable that pins the clock for repeatable runs (tests, evals):
+/// an RFC 3339 timestamp, or a `YYYY-MM-DD` date meaning local midnight.
+/// An unparseable value is ignored and the real clock is used, because the
+/// clock is read deep inside operations that have no good way to report it.
+const NOW_ENV: &str = "COMMONPLACE_NOW";
+
+static PINNED_NOW: LazyLock<Option<DateTime<FixedOffset>>> = LazyLock::new(|| {
+    std::env::var(NOW_ENV)
+        .ok()
+        .and_then(|v| parse_pinned_now(&v))
+});
+
+fn parse_pinned_now(value: &str) -> Option<DateTime<FixedOffset>> {
+    let value = value.trim();
+    if let Ok(t) = DateTime::parse_from_rfc3339(value) {
+        return Some(t);
+    }
+    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
+    Local
+        .from_local_datetime(&date.and_time(NaiveTime::MIN))
+        .earliest()
+        .map(|t| t.fixed_offset())
 }
 
+fn now() -> DateTime<FixedOffset> {
+    PINNED_NOW.unwrap_or_else(|| Local::now().fixed_offset())
+}
+
+/// Today's date as `YYYY-MM-DD` (honours `COMMONPLACE_NOW`).
+pub fn today() -> String {
+    now().format("%Y-%m-%d").to_string()
+}
+
+/// The current time as RFC 3339 with seconds (honours `COMMONPLACE_NOW`).
 pub fn now_iso() -> String {
-    chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 pub fn is_markdown(p: &Path) -> bool {
@@ -99,4 +131,18 @@ pub fn stem(p: &Path) -> String {
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_pinned_now;
+
+    #[test]
+    fn pinned_now_accepts_rfc3339_and_plain_dates() {
+        let t = parse_pinned_now("2026-01-02T03:04:05+02:00").unwrap();
+        assert_eq!(t.to_rfc3339(), "2026-01-02T03:04:05+02:00");
+        let d = parse_pinned_now(" 2026-01-02 ").unwrap();
+        assert_eq!(d.format("%Y-%m-%d %H:%M").to_string(), "2026-01-02 00:00");
+        assert!(parse_pinned_now("next tuesday").is_none());
+    }
 }

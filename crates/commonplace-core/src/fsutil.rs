@@ -2,7 +2,7 @@
 
 use crate::{Error, Result};
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
@@ -99,10 +99,4 @@ pub fn stem(p: &Path) -> String {
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_string()
-}
-
-pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
 }

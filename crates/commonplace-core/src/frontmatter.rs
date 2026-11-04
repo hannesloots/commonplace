@@ -130,18 +130,6 @@ pub fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
     }
 }
 
-pub fn get_bool(fm: &Mapping, key: &str) -> Option<bool> {
-    match fm.get(key)? {
-        Value::Bool(b) => Some(*b),
-        Value::String(s) => match s.to_ascii_lowercase().as_str() {
-            "true" | "yes" => Some(true),
-            "false" | "no" => Some(false),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 pub fn set_str(fm: &mut Mapping, key: &str, val: &str) {
     fm.insert(
         Value::String(key.to_string()),

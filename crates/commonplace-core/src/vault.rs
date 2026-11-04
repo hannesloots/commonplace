@@ -41,22 +41,6 @@ pub const SKIP_DIRS: &[&str] = &[
 /// Root files that are instructions, not wiki pages.
 pub const SKIP_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "README.md"];
 
-/// Frontmatter fields whose values are links to other pages.
-pub const LINK_FIELDS: &[&str] = &[
-    "sources",
-    "related",
-    "up",
-    "parent",
-    "project",
-    "projects",
-    "area",
-    "people",
-    "superseded_by",
-    "supersedes",
-    "decided_in",
-    "evidence",
-];
-
 #[derive(Debug, Clone)]
 pub struct Page {
     pub path: PathBuf,
@@ -68,7 +52,8 @@ pub struct Page {
     pub aliases: Vec<String>,
     pub tags: Vec<String>,
     pub body_links: Vec<WikiLink>,
-    /// (field name, target) links found in frontmatter link fields and any field containing [[...]]
+    /// (field name, target) for every `[[wikilink]]` in any frontmatter field; packs
+    /// define their own relation fields, so no field list is assumed.
     pub fm_links: Vec<(String, String)>,
     pub parse_error: Option<String>,
     pub mtime: Option<std::time::SystemTime>,
@@ -366,9 +351,4 @@ pub fn load_page(root: &Path, path: &Path) -> Result<Page> {
         parse_error: None,
         mtime,
     })
-}
-
-pub fn save_page(page: &Page) -> Result<()> {
-    let text = frontmatter::render(&page.doc.fm, &page.doc.body)?;
-    fsutil::write_atomic(&page.path, text.as_bytes())
 }

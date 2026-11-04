@@ -470,10 +470,6 @@ pub fn new_page(
     })
 }
 
-pub fn template_dir(root: &Path) -> PathBuf {
-    crate::vault::tool_dir(root).join("templates")
-}
-
 pub fn persona_text(
     root: &Path,
     skill_dir: Option<&Path>,

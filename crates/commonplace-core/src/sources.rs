@@ -62,6 +62,181 @@ pub fn make_id(title: &str, date: &str) -> String {
 static DATE_PREFIX_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"^(\d{4}-\d{2}-\d{2})\s+(.+)$"));
 
+/// The report for a file whose hash is already registered.
+fn duplicate_report(id: &str, rec: &SourceRecord, sha: String) -> IngestReport {
+    IngestReport {
+        id: id.to_string(),
+        raw: rec.raw.clone(),
+        raw_sha256: sha,
+        text: rec.text.clone(),
+        note: rec.note.clone().unwrap_or_default(),
+        converter: rec.converter.clone().unwrap_or_default(),
+        fidelity: String::new(),
+        pages: None,
+        needs_conversion: false,
+        duplicate_of: Some(id.to_string()),
+        warnings: vec![
+            "identical file already ingested; nothing done (use --force to ingest again)".into(),
+        ],
+    }
+}
+
+/// Title and date from the options, else from the file name (`YYYY-MM-DD Title` is split).
+fn title_and_date(opts: &IngestOptions, file_stem: &str) -> (String, String) {
+    let t = opts
+        .title
+        .clone()
+        .unwrap_or_else(|| file_stem.replace(['_', '-'], " "));
+    match DATE_PREFIX_RE.captures(&t) {
+        Some(c) if opts.date.is_none() => (c[2].to_string(), c[1].to_string()),
+        _ => (t, opts.date.clone().unwrap_or_else(fsutil::today)),
+    }
+}
+
+/// `id`, or `id (n)` with the first free `n` when the id is taken.
+fn unique_id(
+    manifest: &Manifest,
+    notes_dir: &Path,
+    id: String,
+    warnings: &mut Vec<String>,
+) -> String {
+    let taken = |candidate: &str| {
+        manifest.sources.contains_key(candidate)
+            || notes_dir.join(format!("{candidate}.md")).exists()
+    };
+    if !taken(&id) {
+        return id;
+    }
+    let mut n = 2;
+    while taken(&format!("{id} ({n})")) {
+        n += 1;
+    }
+    warnings.push(format!("a source named '{id}' already exists; using '{id} ({n})'. If this is the same document in a new version, consider `supersedes`."));
+    format!("{id} ({n})")
+}
+
+/// Copy (or move) the original into `sources/raw` and make it read-only.
+fn store_raw(src: &Path, raw_path: &Path, move_file: bool) -> Result<()> {
+    if move_file {
+        std::fs::rename(src, raw_path).or_else(|_| {
+            std::fs::copy(src, raw_path)
+                .map(|_| ())
+                .and_then(|()| std::fs::remove_file(src))
+        })?;
+    } else {
+        std::fs::copy(src, raw_path)
+            .with_context(|| format!("copying to {}", raw_path.display()))?;
+    }
+    set_readonly(raw_path);
+    Ok(())
+}
+
+/// Write the text layer for a converted source; returns its sha256.
+fn write_text_layer(
+    root: &Path,
+    text_rel: &str,
+    id: &str,
+    raw_rel: &str,
+    raw_sha: &str,
+    conv: &ConvertResult,
+    c: &Converted,
+) -> Result<String> {
+    let mut fm = serde_yaml::Mapping::new();
+    frontmatter::set_str(&mut fm, "type", "source-text");
+    frontmatter::set_str(&mut fm, "source", id);
+    frontmatter::set_str(&mut fm, "raw", raw_rel);
+    frontmatter::set_str(&mut fm, "raw_sha256", raw_sha);
+    frontmatter::set_str(&mut fm, "converter", &conv.converter);
+    frontmatter::set_str(&mut fm, "fidelity", &conv.fidelity);
+    if let Some(p) = c.pages {
+        frontmatter::set_value(&mut fm, "pages", serde_yaml::Value::Number(p.into()));
+    }
+    frontmatter::set_str(
+        &mut fm,
+        "anchors",
+        if c.pages.is_some() { "page" } else { "line" },
+    );
+    frontmatter::set_str(
+        &mut fm,
+        "note",
+        "Faithful rendition of the original. Do not edit; re-convert instead.",
+    );
+    let text = frontmatter::render(&fm, &c.text)?;
+    fsutil::write_atomic(&root.join(text_rel), text.as_bytes())?;
+    Ok(fsutil::sha256_str(&text))
+}
+
+/// What a new source note records about its source.
+struct NoteFields<'a> {
+    title: &'a str,
+    date: &'a str,
+    kind: &'a str,
+    raw_rel: &'a str,
+    /// The text layer path, or None when the source still needs conversion.
+    text_rel: Option<&'a str>,
+}
+
+/// The new source note: frontmatter plus the L1/L2/L3 summary skeleton.
+fn render_source_note(
+    f: &NoteFields<'_>,
+    opts: &IngestOptions,
+    conv: &ConvertResult,
+) -> Result<String> {
+    let today = fsutil::today();
+    let mut fm = serde_yaml::Mapping::new();
+    let strings = [
+        ("type", "source"),
+        ("title", f.title),
+        ("kind", f.kind),
+        ("raw", f.raw_rel),
+        ("text", f.text_rel.unwrap_or("")),
+        ("origin", opts.origin.as_deref().unwrap_or("")),
+        ("retrieved", &today),
+        ("published", f.date),
+        ("author", ""),
+        ("publisher", ""),
+        ("authority", opts.authority.as_deref().unwrap_or("primary")),
+        (
+            "confidentiality",
+            opts.confidentiality.as_deref().unwrap_or("personal"),
+        ),
+        ("fidelity", &conv.fidelity),
+        ("converter", &conv.converter),
+        (
+            "status",
+            if f.text_rel.is_some() {
+                "converted"
+            } else {
+                "registered"
+            },
+        ),
+    ];
+    for (k, v) in strings {
+        frontmatter::set_str(&mut fm, k, v);
+    }
+    frontmatter::set_value(
+        &mut fm,
+        "summary_level",
+        serde_yaml::Value::Number(0.into()),
+    );
+    frontmatter::set_value(&mut fm, "tags", serde_yaml::Value::Sequence(vec![]));
+    let projects = opts
+        .project
+        .iter()
+        .map(|p| serde_yaml::Value::String(format!("[[{p}]]")))
+        .collect();
+    frontmatter::set_value(&mut fm, "projects", serde_yaml::Value::Sequence(projects));
+    frontmatter::set_str(&mut fm, "description", "");
+    frontmatter::set_str(&mut fm, "created", &today);
+    frontmatter::set_str(&mut fm, "updated", &today);
+    let body = format!(
+        "# {}\n\n## TL;DR\n\n<!-- one or two sentences: what this is and why it matters (L1) -->\n\n## Summary\n\n<!-- up to ~300 words in your own words (L2) -->\n\n## Key quotes\n\n<!-- verbatim, anchored: > \"…\" — p.12 / para 26 / §3.2 (L3). These feed citations. -->\n\n## Structure\n\n{}\n## Relevance and open questions\n\n## Related\n",
+        f.title,
+        conv.outline.as_deref().unwrap_or_default()
+    );
+    frontmatter::render(&fm, &body)
+}
+
 pub fn ingest(
     root: &Path,
     config: &Config,
@@ -77,77 +252,28 @@ pub fn ingest(
     if let Some((id, rec)) = manifest.find_by_hash(&sha)
         && !opts.force
     {
-        return Ok(IngestReport {
-            id: id.clone(),
-            raw: rec.raw.clone(),
-            raw_sha256: sha,
-            text: rec.text.clone(),
-            note: rec.note.clone().unwrap_or_default(),
-            converter: rec.converter.clone().unwrap_or_default(),
-            fidelity: String::new(),
-            pages: None,
-            needs_conversion: false,
-            duplicate_of: Some(id.clone()),
-            warnings: vec![
-                "identical file already ingested; nothing done (use --force to ingest again)"
-                    .into(),
-            ],
-        });
+        return Ok(duplicate_report(id, rec, sha));
     }
     let ext = src
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    let file_stem = fsutil::stem(src);
-    let (title, date) = {
-        let t = opts
-            .title
-            .clone()
-            .unwrap_or_else(|| file_stem.replace(['_', '-'], " "));
-        let d = opts.date.clone();
-        match DATE_PREFIX_RE.captures(&t) {
-            Some(c) if d.is_none() => (c[2].to_string(), c[1].to_string()),
-            _ => (t, d.unwrap_or_else(fsutil::today)),
-        }
-    };
-    let mut id = make_id(&title, &date);
-    let raw_dir = root.join(RAW_DIR);
+    let (title, date) = title_and_date(opts, &fsutil::stem(src));
     let notes_dir = root.join(NOTES_DIR);
-    let text_dir = root.join(TEXT_DIR);
-    std::fs::create_dir_all(&raw_dir)?;
-    std::fs::create_dir_all(&notes_dir)?;
-    std::fs::create_dir_all(&text_dir)?;
-    // avoid id collisions (same title+date, different content)
-    if manifest.sources.contains_key(&id) || notes_dir.join(format!("{id}.md")).exists() {
-        let mut n = 2;
-        while manifest.sources.contains_key(&format!("{id} ({n})"))
-            || notes_dir.join(format!("{id} ({n}).md")).exists()
-        {
-            n += 1;
-        }
-        warnings.push(format!("a source named '{id}' already exists; using '{id} ({n})'. If this is the same document in a new version, consider `supersedes`."));
-        id = format!("{id} ({n})");
+    for dir in [RAW_DIR, NOTES_DIR, TEXT_DIR] {
+        std::fs::create_dir_all(root.join(dir))?;
     }
+    let id = unique_id(&manifest, &notes_dir, make_id(&title, &date), &mut warnings);
     let raw_name = if ext.is_empty() {
         id.clone()
     } else {
         format!("{id}.{ext}")
     };
-    let raw_path = raw_dir.join(&raw_name);
-    if opts.move_file {
-        std::fs::rename(src, &raw_path).or_else(|_| {
-            std::fs::copy(src, &raw_path)
-                .map(|_| ())
-                .and_then(|()| std::fs::remove_file(src))
-        })?;
-    } else {
-        std::fs::copy(src, &raw_path)
-            .with_context(|| format!("copying to {}", raw_path.display()))?;
-    }
-    set_readonly(&raw_path);
+    let raw_rel = format!("{RAW_DIR}/{raw_name}");
+    let raw_path = root.join(RAW_DIR).join(&raw_name);
+    store_raw(src, &raw_path, opts.move_file)?;
 
-    // Convert
     let kind = opts.kind.clone().unwrap_or_else(|| guess_kind(&ext));
     let conv = convert(
         &raw_path,
@@ -157,113 +283,38 @@ pub fn ingest(
         opts.origin.as_deref(),
     )?;
     let text_rel = format!("{TEXT_DIR}/{id}.text.md");
-    let mut text_sha = None;
-    let mut pages = None;
-    if let Some(c) = &conv.markdown {
-        pages = c.pages;
-        let mut fm = serde_yaml::Mapping::new();
-        frontmatter::set_str(&mut fm, "type", "source-text");
-        frontmatter::set_str(&mut fm, "source", &id);
-        frontmatter::set_str(&mut fm, "raw", &format!("{RAW_DIR}/{raw_name}"));
-        frontmatter::set_str(&mut fm, "raw_sha256", &sha);
-        frontmatter::set_str(&mut fm, "converter", &conv.converter);
-        frontmatter::set_str(&mut fm, "fidelity", &conv.fidelity);
-        if let Some(p) = c.pages {
-            frontmatter::set_value(&mut fm, "pages", serde_yaml::Value::Number(p.into()));
-        }
-        frontmatter::set_str(
-            &mut fm,
-            "anchors",
-            if c.pages.is_some() { "page" } else { "line" },
-        );
-        frontmatter::set_str(
-            &mut fm,
-            "note",
-            "Faithful rendition of the original. Do not edit; re-convert instead.",
-        );
-        let text = frontmatter::render(&fm, &c.text)?;
-        fsutil::write_atomic(&root.join(&text_rel), text.as_bytes())?;
-        text_sha = Some(fsutil::sha256_str(&text));
-    }
+    let (text_sha, pages) = match &conv.markdown {
+        Some(c) => (
+            Some(write_text_layer(
+                root, &text_rel, &id, &raw_rel, &sha, &conv, c,
+            )?),
+            c.pages,
+        ),
+        None => (None, None),
+    };
     let needs_conversion = conv.markdown.is_none();
     if needs_conversion {
         warnings.push(format!("no converter could handle .{ext}: {}. Write the text layer yourself at {text_rel} (see references/ingest.md) and run `commonplace source attach-text \"{id}\"`.", conv.reason));
     }
+    let text = (!needs_conversion).then_some(text_rel);
 
-    // Source note
     let note_rel = format!("{NOTES_DIR}/{id}.md");
-    let mut fm = serde_yaml::Mapping::new();
-    frontmatter::set_str(&mut fm, "type", "source");
-    frontmatter::set_str(&mut fm, "title", &title);
-    frontmatter::set_str(&mut fm, "kind", &kind);
-    frontmatter::set_str(&mut fm, "raw", &format!("{RAW_DIR}/{raw_name}"));
-    frontmatter::set_str(
-        &mut fm,
-        "text",
-        if needs_conversion { "" } else { &text_rel },
-    );
-    frontmatter::set_str(&mut fm, "origin", opts.origin.as_deref().unwrap_or(""));
-    frontmatter::set_str(&mut fm, "retrieved", &fsutil::today());
-    frontmatter::set_str(&mut fm, "published", &date);
-    frontmatter::set_str(&mut fm, "author", "");
-    frontmatter::set_str(&mut fm, "publisher", "");
-    frontmatter::set_str(
-        &mut fm,
-        "authority",
-        opts.authority.as_deref().unwrap_or("primary"),
-    );
-    frontmatter::set_str(
-        &mut fm,
-        "confidentiality",
-        opts.confidentiality.as_deref().unwrap_or("personal"),
-    );
-    frontmatter::set_str(&mut fm, "fidelity", &conv.fidelity);
-    frontmatter::set_str(&mut fm, "converter", &conv.converter);
-    frontmatter::set_str(
-        &mut fm,
-        "status",
-        if needs_conversion {
-            "registered"
-        } else {
-            "converted"
-        },
-    );
-    frontmatter::set_value(
-        &mut fm,
-        "summary_level",
-        serde_yaml::Value::Number(0.into()),
-    );
-    frontmatter::set_value(&mut fm, "tags", serde_yaml::Value::Sequence(vec![]));
-    frontmatter::set_value(
-        &mut fm,
-        "projects",
-        serde_yaml::Value::Sequence(
-            opts.project
-                .iter()
-                .map(|p| serde_yaml::Value::String(format!("[[{p}]]")))
-                .collect(),
-        ),
-    );
-    frontmatter::set_str(&mut fm, "description", "");
-    frontmatter::set_str(&mut fm, "created", &fsutil::today());
-    frontmatter::set_str(&mut fm, "updated", &fsutil::today());
-    let body = format!(
-        "# {title}\n\n## TL;DR\n\n<!-- one or two sentences: what this is and why it matters (L1) -->\n\n## Summary\n\n<!-- up to ~300 words in your own words (L2) -->\n\n## Key quotes\n\n<!-- verbatim, anchored: > \"…\" — p.12 / para 26 / §3.2 (L3). These feed citations. -->\n\n## Structure\n\n{}\n## Relevance and open questions\n\n## Related\n",
-        conv.outline.clone().unwrap_or_default()
-    );
-    let note_text = frontmatter::render(&fm, &body)?;
+    let fields = NoteFields {
+        title: &title,
+        date: &date,
+        kind: &kind,
+        raw_rel: &raw_rel,
+        text_rel: text.as_deref(),
+    };
+    let note_text = render_source_note(&fields, opts, &conv)?;
     fsutil::write_atomic(&root.join(&note_rel), note_text.as_bytes())?;
 
     manifest.sources.insert(
         id.clone(),
         SourceRecord {
-            raw: format!("{RAW_DIR}/{raw_name}"),
+            raw: raw_rel.clone(),
             raw_sha256: sha.clone(),
-            text: if needs_conversion {
-                None
-            } else {
-                Some(text_rel.clone())
-            },
+            text: text.clone(),
             text_sha256: text_sha,
             note: Some(note_rel.clone()),
             ingested: fsutil::now_iso(),
@@ -272,18 +323,12 @@ pub fn ingest(
         },
     );
     manifest.save(root)?;
-    if let Some(w) = conv.warning {
-        warnings.push(w);
-    }
+    warnings.extend(conv.warning);
     Ok(IngestReport {
         id,
-        raw: format!("{RAW_DIR}/{raw_name}"),
+        raw: raw_rel,
         raw_sha256: sha,
-        text: if needs_conversion {
-            None
-        } else {
-            Some(text_rel)
-        },
+        text,
         note: note_rel,
         converter: conv.converter,
         fidelity: conv.fidelity,
@@ -298,6 +343,7 @@ fn set_readonly(p: &Path) {
     if let Ok(md) = std::fs::metadata(p) {
         let mut perms = md.permissions();
         perms.set_readonly(true);
+        // best effort: a writable original is still hashed and verified
         let _ = std::fs::set_permissions(p, perms);
     }
 }
@@ -333,6 +379,66 @@ pub struct ConvertResult {
     pub outline: Option<String>,
 }
 
+impl ConvertResult {
+    /// A successful conversion to markdown without page anchors; the outline comes from its headings.
+    fn markdown(text: String, converter: &str, fidelity: &str, warning: Option<String>) -> Self {
+        let outline = outline_from_markdown(&text);
+        ConvertResult {
+            markdown: Some(Converted { text, pages: None }),
+            converter: converter.into(),
+            fidelity: fidelity.into(),
+            reason: String::new(),
+            warning,
+            outline,
+        }
+    }
+
+    fn none(reason: String) -> Self {
+        ConvertResult {
+            markdown: None,
+            converter: "none".into(),
+            fidelity: "none".into(),
+            reason,
+            warning: None,
+            outline: None,
+        }
+    }
+}
+
+/// Run an external converter; `None` when it exits unsuccessfully.
+fn run_converter(cmd: &mut std::process::Command) -> Result<Option<String>> {
+    let out = cmd.output()?;
+    Ok(out
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).to_string()))
+}
+
+fn convert_pdftotext(raw: &Path) -> Result<Option<ConvertResult>> {
+    let Some(stdout) = run_converter(
+        std::process::Command::new("pdftotext")
+            .args(["-layout", "-enc", "UTF-8"])
+            .arg(raw)
+            .arg("-"),
+    )?
+    else {
+        return Ok(None);
+    };
+    let (text, pages) = page_markers_from_formfeeds(&stdout);
+    let sparse = text.len().checked_div(pages).unwrap_or(text.len()) < 200;
+    Ok(Some(ConvertResult {
+        markdown: Some(Converted {
+            text,
+            pages: Some(pages),
+        }),
+        converter: "pdftotext".into(),
+        fidelity: if sparse { "low" } else { "medium" }.into(),
+        reason: String::new(),
+        warning: sparse.then(|| "very little text per page: probably a scanned PDF that needs OCR (docling/marker) or manual conversion".into()),
+        outline: None,
+    }))
+}
+
 /// Convert a raw file into markdown. Built in: md, txt, html. External (if
 /// installed, in the configured preference order): pdftotext for PDF; pandoc
 /// for docx/odt/rtf/epub; markitdown for office formats. Anything else is left
@@ -344,46 +450,14 @@ pub fn convert(
     forced: Option<&str>,
     origin: Option<&str>,
 ) -> Result<ConvertResult> {
-    let none = |reason: &str| ConvertResult {
-        markdown: None,
-        converter: "none".into(),
-        fidelity: "none".into(),
-        reason: reason.into(),
-        warning: None,
-        outline: None,
-    };
     match ext {
         "md" | "markdown" | "txt" | "text" => {
-            let t = std::fs::read_to_string(raw)?;
-            let t = strip_frontmatter(&t);
-            let outline = outline_from_markdown(&t);
-            return Ok(ConvertResult {
-                markdown: Some(Converted {
-                    text: t,
-                    pages: None,
-                }),
-                converter: "copy".into(),
-                fidelity: "high".into(),
-                reason: String::new(),
-                warning: None,
-                outline,
-            });
+            let t = strip_frontmatter(&std::fs::read_to_string(raw)?);
+            return Ok(ConvertResult::markdown(t, "copy", "high", None));
         }
         "html" | "htm" => {
-            let h = std::fs::read_to_string(raw)?;
-            let md = html_to_markdown(&h, origin)?;
-            let outline = outline_from_markdown(&md);
-            return Ok(ConvertResult {
-                markdown: Some(Converted {
-                    text: md,
-                    pages: None,
-                }),
-                converter: "htmd".into(),
-                fidelity: "high".into(),
-                reason: String::new(),
-                warning: None,
-                outline,
-            });
+            let md = html_to_markdown(&std::fs::read_to_string(raw)?, origin)?;
+            return Ok(ConvertResult::markdown(md, "htmd", "high", None));
         }
         _ => {}
     }
@@ -392,96 +466,31 @@ pub fn convert(
         Some(f) => vec![f.to_string()],
         None => config.converters.prefer.clone(),
     };
-    for name in order {
-        let present = available.iter().any(|a| a == &name);
-        if !present {
-            continue;
-        }
-        match (name.as_str(), ext) {
-            ("pdftotext", "pdf") => {
-                let out = std::process::Command::new("pdftotext")
-                    .args(["-layout", "-enc", "UTF-8"])
+    for name in order.iter().filter(|n| available.contains(n)) {
+        let result = match (name.as_str(), ext) {
+            ("pdftotext", "pdf") => convert_pdftotext(raw)?,
+            ("pandoc", "docx" | "odt" | "rtf" | "epub" | "html") => run_converter(
+                std::process::Command::new("pandoc")
                     .arg(raw)
-                    .arg("-")
-                    .output()?;
-                if !out.status.success() {
-                    continue;
-                }
-                let raw = String::from_utf8_lossy(&out.stdout).to_string();
-                let (text, pages) = page_markers_from_formfeeds(&raw);
-                let chars_per_page = text.len().checked_div(pages).unwrap_or(text.len());
-                let fidelity = if chars_per_page < 200 {
-                    "low"
-                } else {
-                    "medium"
-                };
-                let warning = if chars_per_page < 200 {
-                    Some("very little text per page: probably a scanned PDF that needs OCR (docling/marker) or manual conversion".into())
-                } else {
-                    None
-                };
-                return Ok(ConvertResult {
-                    markdown: Some(Converted {
-                        text,
-                        pages: Some(pages),
-                    }),
-                    converter: "pdftotext".into(),
-                    fidelity: fidelity.into(),
-                    reason: String::new(),
-                    warning,
-                    outline: None,
-                });
-            }
-            ("pandoc", "docx" | "odt" | "rtf" | "epub" | "html") => {
-                let out = std::process::Command::new("pandoc")
-                    .arg(raw)
-                    .args(["-t", "gfm", "--wrap=none"])
-                    .output()?;
-                if !out.status.success() {
-                    continue;
-                }
-                let md = String::from_utf8_lossy(&out.stdout).to_string();
-                let outline = outline_from_markdown(&md);
-                return Ok(ConvertResult {
-                    markdown: Some(Converted {
-                        text: md,
-                        pages: None,
-                    }),
-                    converter: "pandoc".into(),
-                    fidelity: "high".into(),
-                    reason: String::new(),
-                    warning: None,
-                    outline,
-                });
-            }
+                    .args(["-t", "gfm", "--wrap=none"]),
+            )?
+            .map(|md| ConvertResult::markdown(md, "pandoc", "high", None)),
             ("markitdown", "docx" | "pptx" | "xlsx" | "pdf") => {
-                let out = std::process::Command::new("markitdown").arg(raw).output()?;
-                if !out.status.success() {
-                    continue;
-                }
-                let md = String::from_utf8_lossy(&out.stdout).to_string();
-                let outline = outline_from_markdown(&md);
-                let fid = if ext == "pdf" { "medium" } else { "high" };
-                return Ok(ConvertResult {
-                    markdown: Some(Converted {
-                        text: md,
-                        pages: None,
-                    }),
-                    converter: "markitdown".into(),
-                    fidelity: fid.into(),
-                    reason: String::new(),
-                    warning: if ext == "pdf" {
-                        Some("markitdown drops page boundaries; add <!-- page:N --> markers or re-convert with pdftotext for page-level citations".into())
+                run_converter(std::process::Command::new("markitdown").arg(raw))?.map(|md| {
+                    if ext == "pdf" {
+                        ConvertResult::markdown(md, "markitdown", "medium", Some("markitdown drops page boundaries; add <!-- page:N --> markers or re-convert with pdftotext for page-level citations".into()))
                     } else {
-                        None
-                    },
-                    outline,
-                });
+                        ConvertResult::markdown(md, "markitdown", "high", None)
+                    }
+                })
             }
-            _ => {}
+            _ => None,
+        };
+        if let Some(r) = result {
+            return Ok(r);
         }
     }
-    Ok(none(&format!(
+    Ok(ConvertResult::none(format!(
         "no installed converter handles .{ext} (available: {})",
         if available.is_empty() {
             "none".to_string()

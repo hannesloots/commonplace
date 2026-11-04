@@ -9,7 +9,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize)]
 pub struct Hit {
     pub rel: String,
-    pub title: String,
+    pub(crate) title: String,
     #[serde(rename = "type")]
     pub ptype: String,
     pub score: f64,
@@ -25,7 +25,7 @@ pub struct SearchOptions {
     pub limit: usize,
 }
 
-pub fn tokenize(s: &str) -> Vec<String> {
+pub(crate) fn tokenize(s: &str) -> Vec<String> {
     let n = crate::cite::normalise(s);
     n.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '\'')
         .filter(|w| w.len() > 1)

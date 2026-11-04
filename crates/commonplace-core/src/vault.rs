@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 /// Folders (relative to root) that are not wiki pages.
 /// Name of the tool-owned folder (manifest, templates, packs, reviews).
-pub const TOOL_DIR: &str = ".commonplace";
+pub(crate) const TOOL_DIR: &str = ".commonplace";
 /// Name used before 0.5.0; a root that has it keeps using it.
-pub const LEGACY_TOOL_DIR: &str = ".brain";
+pub(crate) const LEGACY_TOOL_DIR: &str = ".brain";
 
 /// The tool-owned folder of a root: `.commonplace`, or `.brain` if only that exists.
 pub fn tool_dir(root: &Path) -> PathBuf {
@@ -27,7 +27,7 @@ pub fn tool_dir(root: &Path) -> PathBuf {
     cur
 }
 
-pub const SKIP_DIRS: &[&str] = &[
+pub(crate) const SKIP_DIRS: &[&str] = &[
     ".commonplace",
     ".brain",
     ".git",
@@ -39,46 +39,46 @@ pub const SKIP_DIRS: &[&str] = &[
 ];
 
 /// Root files that are instructions, not wiki pages.
-pub const SKIP_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "README.md"];
+pub(crate) const SKIP_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "README.md"];
 
 #[derive(Debug, Clone)]
 pub struct Page {
-    pub path: PathBuf,
+    pub(crate) path: PathBuf,
     pub rel: String,
     pub stem: String,
-    pub doc: Document,
-    pub ptype: String,
+    pub(crate) doc: Document,
+    pub(crate) ptype: String,
     pub title: String,
-    pub aliases: Vec<String>,
-    pub tags: Vec<String>,
-    pub body_links: Vec<WikiLink>,
+    pub(crate) aliases: Vec<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) body_links: Vec<WikiLink>,
     /// (field name, target) for every `[[wikilink]]` in any frontmatter field; packs
     /// define their own relation fields, so no field list is assumed.
-    pub fm_links: Vec<(String, String)>,
-    pub parse_error: Option<String>,
-    pub mtime: Option<std::time::SystemTime>,
+    pub(crate) fm_links: Vec<(String, String)>,
+    pub(crate) parse_error: Option<String>,
+    pub(crate) mtime: Option<std::time::SystemTime>,
 }
 
 impl Page {
-    pub fn fm(&self) -> &serde_yaml::Mapping {
+    pub(crate) fn fm(&self) -> &serde_yaml::Mapping {
         &self.doc.fm
     }
     pub fn get(&self, key: &str) -> Option<String> {
         frontmatter::get_str(&self.doc.fm, key)
     }
-    pub fn list(&self, key: &str) -> Vec<String> {
+    pub(crate) fn list(&self, key: &str) -> Vec<String> {
         frontmatter::get_list(&self.doc.fm, key)
     }
-    pub fn folder(&self) -> String {
+    pub(crate) fn folder(&self) -> String {
         match self.rel.rfind('/') {
             Some(i) => self.rel[..i].to_string(),
             None => String::new(),
         }
     }
-    pub fn top_folder(&self) -> String {
+    pub(crate) fn top_folder(&self) -> String {
         self.rel.split('/').next().unwrap_or("").to_string()
     }
-    pub fn all_link_targets(&self) -> Vec<String> {
+    pub(crate) fn all_link_targets(&self) -> Vec<String> {
         let mut v: Vec<String> = self.body_links.iter().map(|l| l.target.clone()).collect();
         v.extend(self.fm_links.iter().map(|(_, t)| t.clone()));
         v
@@ -141,7 +141,7 @@ impl Vault {
         self.reindex();
     }
 
-    pub fn reindex(&mut self) {
+    pub(crate) fn reindex(&mut self) {
         self.by_stem.clear();
         self.by_alias.clear();
         self.by_rel.clear();
@@ -157,15 +157,9 @@ impl Vault {
         }
     }
 
-    pub fn page_by_rel(&self, rel: &str) -> Option<&Page> {
-        self.by_rel
-            .get(&rel.to_lowercase())
-            .map(|&i| &self.pages[i])
-    }
-
     /// Resolve a wikilink target to candidate page indexes.
     /// Order of preference: exact relative path, exact stem, alias.
-    pub fn resolve(&self, target: &str) -> Resolution {
+    pub(crate) fn resolve(&self, target: &str) -> Resolution {
         let mut t = target.trim().replace('\\', "/");
         if let Some(s) = t.strip_suffix(".md") {
             t = s.to_string();
@@ -213,7 +207,7 @@ impl Vault {
         Resolution::Missing
     }
 
-    pub fn resolve_page(&self, target: &str) -> Option<&Page> {
+    pub(crate) fn resolve_page(&self, target: &str) -> Option<&Page> {
         match self.resolve(target) {
             Resolution::Found(i) => Some(&self.pages[i]),
             _ => None,
@@ -221,7 +215,7 @@ impl Vault {
     }
 
     /// Closest existing stems/aliases for a missing target (for `links fix` suggestions).
-    pub fn suggest(&self, target: &str, n: usize) -> Vec<(String, f64)> {
+    pub(crate) fn suggest(&self, target: &str, n: usize) -> Vec<(String, f64)> {
         let t = target.to_lowercase();
         let mut cands: Vec<(String, f64)> = self
             .pages
@@ -246,7 +240,7 @@ impl Vault {
     }
 
     /// Inbound link map: page index -> set of page indexes linking to it.
-    pub fn backlinks(&self) -> HashMap<usize, Vec<usize>> {
+    pub(crate) fn backlinks(&self) -> HashMap<usize, Vec<usize>> {
         let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
         for (i, p) in self.pages.iter().enumerate() {
             for t in p.all_link_targets() {
@@ -267,22 +261,19 @@ impl Vault {
         self.pages.iter().filter(move |p| p.ptype == t)
     }
 
-    pub fn templates_dir(&self) -> PathBuf {
-        tool_dir(&self.root).join("templates")
-    }
     pub fn packs_dir(&self) -> PathBuf {
         tool_dir(&self.root).join("packs")
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Resolution {
+pub(crate) enum Resolution {
     Found(usize),
     Ambiguous(Vec<usize>),
     Missing,
 }
 
-pub fn walk_markdown(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn walk_markdown(root: &Path) -> Vec<PathBuf> {
     let mut out = vec![];
     let walker = ignore::WalkBuilder::new(root)
         .hidden(false)
@@ -313,7 +304,7 @@ pub fn walk_markdown(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-pub fn load_page(root: &Path, path: &Path) -> Result<Page> {
+pub(crate) fn load_page(root: &Path, path: &Path) -> Result<Page> {
     let text = std::fs::read_to_string(path).map_err(|e| Error::io("reading", path, e))?;
     let doc =
         frontmatter::parse(&text).map_err(|e| e.in_file(Path::new(&fsutil::rel(root, path))))?;

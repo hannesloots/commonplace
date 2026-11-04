@@ -19,7 +19,7 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn write_if_absent(path: &Path, data: &str) -> Result<bool> {
+pub(crate) fn write_if_absent(path: &Path, data: &str) -> Result<bool> {
     if path.exists() {
         return Ok(false);
     }
@@ -27,18 +27,18 @@ pub fn write_if_absent(path: &Path, data: &str) -> Result<bool> {
     Ok(true)
 }
 
-pub fn sha256_file(path: &Path) -> Result<String> {
+pub(crate) fn sha256_file(path: &Path) -> Result<String> {
     let mut f = std::fs::File::open(path).map_err(|e| Error::io("opening", path, e))?;
     let mut h = Sha256::new();
     std::io::copy(&mut f, &mut h)?;
     Ok(hex::encode(h.finalize()))
 }
 
-pub fn sha256_str(s: &str) -> String {
+pub(crate) fn sha256_str(s: &str) -> String {
     hex::encode(Sha256::digest(s.as_bytes()))
 }
 
-pub fn rel(root: &Path, path: &Path) -> String {
+pub(crate) fn rel(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()
@@ -71,7 +71,7 @@ pub fn slug(s: &str, max: usize) -> String {
 
 /// Title-case a free-text title for file names: remove characters that break
 /// wikilinks and paths, collapse whitespace.
-pub fn safe_title(s: &str) -> String {
+pub(crate) fn safe_title(s: &str) -> String {
     let cleaned: String = s
         .chars()
         .map(|c| match c {
@@ -120,13 +120,13 @@ pub fn now_iso() -> String {
     now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
-pub fn is_markdown(p: &Path) -> bool {
+pub(crate) fn is_markdown(p: &Path) -> bool {
     p.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| e.eq_ignore_ascii_case("md"))
 }
 
-pub fn stem(p: &Path) -> String {
+pub(crate) fn stem(p: &Path) -> String {
     p.file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("")

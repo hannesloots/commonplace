@@ -5,20 +5,20 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-pub static WIKILINK_RE: LazyLock<Regex> =
+pub(crate) static WIKILINK_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"\[\[([^\]\|#\^]+)(?:#([^\]\|]*))?(?:\|([^\]]*))?\]\]"));
-pub static FOOTNOTE_DEF_RE: LazyLock<Regex> =
+pub(crate) static FOOTNOTE_DEF_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"(?m)^\[\^([A-Za-z0-9_\-]+)\]:[ \t]*(.*)$"));
-pub static FOOTNOTE_REF_RE: LazyLock<Regex> =
+pub(crate) static FOOTNOTE_REF_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"\[\^([A-Za-z0-9_\-]+)\]"));
-pub static HEADING_RE: LazyLock<Regex> =
+pub(crate) static HEADING_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$"));
 static FENCE_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"(?m)^[ \t]{0,3}(```|~~~)"));
 static INLINE_CODE_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"`[^`\n]*`"));
 
 /// Replace fenced code blocks and inline code with spaces of equal length, so
 /// byte offsets and line numbers are preserved while links inside code are ignored.
-pub fn mask_code(text: &str) -> String {
+pub(crate) fn mask_code(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut in_fence: Option<&str> = None;
     for line in text.split_inclusive('\n') {
@@ -53,7 +53,7 @@ pub fn mask_code(text: &str) -> String {
 }
 
 /// Replace HTML comments with spaces (offsets preserved).
-pub fn mask_comments(text: &str) -> String {
+pub(crate) fn mask_comments(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(s) = rest.find("<!--") {
@@ -77,14 +77,14 @@ fn blank(s: &str) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WikiLink {
-    pub target: String,
-    pub heading: Option<String>,
-    pub alias: Option<String>,
-    pub line: usize, // 1-based within the scanned text
+pub(crate) struct WikiLink {
+    pub(crate) target: String,
+    pub(crate) heading: Option<String>,
+    pub(crate) alias: Option<String>,
+    pub(crate) line: usize, // 1-based within the scanned text
 }
 
-pub fn wikilinks(text: &str) -> Vec<WikiLink> {
+pub(crate) fn wikilinks(text: &str) -> Vec<WikiLink> {
     let masked = mask_comments(&mask_code(text));
     let mut out = vec![];
     for cap in WIKILINK_RE.captures_iter(&masked) {
@@ -108,7 +108,7 @@ pub fn wikilinks(text: &str) -> Vec<WikiLink> {
 }
 
 /// Raw link targets inside a string (e.g. a frontmatter `sources:` entry).
-pub fn wikilink_targets_in(s: &str) -> Vec<String> {
+pub(crate) fn wikilink_targets_in(s: &str) -> Vec<String> {
     WIKILINK_RE
         .captures_iter(s)
         .map(|c| c[1].trim().to_string())
@@ -116,13 +116,13 @@ pub fn wikilink_targets_in(s: &str) -> Vec<String> {
 }
 
 #[derive(Debug, Clone)]
-pub struct FootnoteDef {
-    pub label: String,
-    pub text: String,
-    pub line: usize,
+pub(crate) struct FootnoteDef {
+    pub(crate) label: String,
+    pub(crate) text: String,
+    pub(crate) line: usize,
 }
 
-pub fn footnote_defs(text: &str) -> Vec<FootnoteDef> {
+pub(crate) fn footnote_defs(text: &str) -> Vec<FootnoteDef> {
     FOOTNOTE_DEF_RE
         .captures_iter(text)
         .map(|c| {
@@ -136,7 +136,7 @@ pub fn footnote_defs(text: &str) -> Vec<FootnoteDef> {
         .collect()
 }
 
-pub fn footnote_refs(text: &str) -> Vec<(String, usize)> {
+pub(crate) fn footnote_refs(text: &str) -> Vec<(String, usize)> {
     let masked = mask_code(text);
     // Remove definitions first so the def's own `[^x]` is not counted as a reference.
     let no_defs = FOOTNOTE_DEF_RE.replace_all(&masked, |m: &regex::Captures<'_>| blank(&m[0]));
@@ -153,13 +153,13 @@ pub fn footnote_refs(text: &str) -> Vec<(String, usize)> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Heading {
-    pub level: usize,
-    pub text: String,
-    pub line: usize,
+pub(crate) struct Heading {
+    pub(crate) level: usize,
+    pub(crate) text: String,
+    pub(crate) line: usize,
 }
 
-pub fn headings(text: &str) -> Vec<Heading> {
+pub(crate) fn headings(text: &str) -> Vec<Heading> {
     let masked = mask_code(text);
     HEADING_RE
         .captures_iter(&masked)
@@ -175,7 +175,7 @@ pub fn headings(text: &str) -> Vec<Heading> {
 }
 
 /// First H1 in the body, if any.
-pub fn first_h1(text: &str) -> Option<String> {
+pub(crate) fn first_h1(text: &str) -> Option<String> {
     headings(text)
         .into_iter()
         .find(|h| h.level == 1)
@@ -183,7 +183,7 @@ pub fn first_h1(text: &str) -> Option<String> {
 }
 
 /// Text under a given heading (until the next heading of same or higher level).
-pub fn section<'a>(text: &'a str, heading: &str) -> Option<&'a str> {
+pub(crate) fn section<'a>(text: &'a str, heading: &str) -> Option<&'a str> {
     let hs = headings(text);
     let idx = hs
         .iter()
@@ -221,7 +221,7 @@ fn find_block(text: &str, name: &str) -> Option<(usize, usize, usize, usize)> {
     None
 }
 
-pub fn replace_generated_block(text: &str, name: &str, content: &str) -> String {
+pub(crate) fn replace_generated_block(text: &str, name: &str, content: &str) -> String {
     let start = format!("<!-- commonplace:{name}:start -->");
     let end = format!("<!-- commonplace:{name}:end -->");
     let block = format!("{start}\n{}\n{end}", content.trim_end());
@@ -240,13 +240,13 @@ pub fn replace_generated_block(text: &str, name: &str, content: &str) -> String 
 }
 
 /// The text between generated-block markers, if present.
-pub fn generated_block<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+pub(crate) fn generated_block<'a>(text: &'a str, name: &str) -> Option<&'a str> {
     let (_, s, e, _) = find_block(text, name)?;
     Some(&text[s..e])
 }
 
 /// Does the body contain prose (anything other than headings, blank lines, markers)?
-pub fn has_prose(text: &str) -> bool {
+pub(crate) fn has_prose(text: &str) -> bool {
     mask_comments(text).lines().any(|l| {
         let t = l.trim();
         !(t.is_empty() || t.starts_with('#') || t.starts_with("<!--"))
@@ -254,7 +254,7 @@ pub fn has_prose(text: &str) -> bool {
 }
 
 /// Rough word count of the body (code masked).
-pub fn word_count(text: &str) -> usize {
+pub(crate) fn word_count(text: &str) -> usize {
     mask_code(text).split_whitespace().count()
 }
 

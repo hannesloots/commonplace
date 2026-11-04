@@ -6,16 +6,16 @@ use serde_yaml::{Mapping, Value};
 
 /// A parsed page: frontmatter mapping (may be empty) and body text.
 #[derive(Debug, Clone, Default)]
-pub struct Document {
-    pub fm: Mapping,
-    pub has_frontmatter: bool,
-    pub body: String,
+pub(crate) struct Document {
+    pub(crate) fm: Mapping,
+    pub(crate) has_frontmatter: bool,
+    pub(crate) body: String,
     /// Number of lines occupied by the frontmatter block (including fences), so
     /// body line numbers can be reported as file line numbers.
-    pub body_line_offset: usize,
+    pub(crate) body_line_offset: usize,
 }
 
-pub fn parse(text: &str) -> Result<Document> {
+pub(crate) fn parse(text: &str) -> Result<Document> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     if !(text.starts_with("---\n") || text.starts_with("---\r\n")) {
         return Ok(Document {
@@ -70,7 +70,7 @@ pub fn parse(text: &str) -> Result<Document> {
     })
 }
 
-pub fn render(fm: &Mapping, body: &str) -> Result<String> {
+pub(crate) fn render(fm: &Mapping, body: &str) -> Result<String> {
     let mut out = String::from("---\n");
     if !fm.is_empty() {
         let y = serde_yaml::to_string(&Value::Mapping(fm.clone()))?;
@@ -84,7 +84,7 @@ pub fn render(fm: &Mapping, body: &str) -> Result<String> {
     Ok(out)
 }
 
-pub fn get_str(fm: &Mapping, key: &str) -> Option<String> {
+pub(crate) fn get_str(fm: &Mapping, key: &str) -> Option<String> {
     match fm.get(key)? {
         Value::String(s) => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
@@ -115,7 +115,7 @@ pub fn scalar_to_string(v: &Value) -> String {
 }
 
 /// Return a list-valued field as strings. A scalar becomes a one-element list.
-pub fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
+pub(crate) fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
     match fm.get(key) {
         None | Some(Value::Null) => vec![],
         Some(Value::Sequence(seq)) => seq
@@ -130,14 +130,14 @@ pub fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
     }
 }
 
-pub fn set_str(fm: &mut Mapping, key: &str, val: &str) {
+pub(crate) fn set_str(fm: &mut Mapping, key: &str, val: &str) {
     fm.insert(
         Value::String(key.to_string()),
         Value::String(val.to_string()),
     );
 }
 
-pub fn set_value(fm: &mut Mapping, key: &str, val: Value) {
+pub(crate) fn set_value(fm: &mut Mapping, key: &str, val: Value) {
     fm.insert(Value::String(key.to_string()), val);
 }
 

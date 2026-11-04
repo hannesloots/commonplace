@@ -18,20 +18,20 @@ static INLINE_FIELD_RE: LazyLock<Regex> =
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Node {
-    pub id: String, // page stem (unique within the commonplace)
-    pub rel: String,
-    pub label: String, // type
-    pub title: String,
-    pub description: String,
-    pub status: String,
-    pub folder: String,
+    pub(crate) id: String, // page stem (unique within the commonplace)
+    pub(crate) rel: String,
+    pub(crate) label: String, // type
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) status: String,
+    pub(crate) folder: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 pub struct Edge {
-    pub from: String,
-    pub to: String,
-    pub rel: String,
+    pub(crate) from: String,
+    pub(crate) to: String,
+    pub(crate) rel: String,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]

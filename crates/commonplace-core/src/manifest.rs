@@ -18,23 +18,23 @@ pub struct Manifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SourceRecord {
-    pub raw: String,
-    pub raw_sha256: String,
+    pub(crate) raw: String,
+    pub(crate) raw_sha256: String,
     #[serde(default)]
-    pub text: Option<String>,
+    pub(crate) text: Option<String>,
     #[serde(default)]
-    pub text_sha256: Option<String>,
+    pub(crate) text_sha256: Option<String>,
     #[serde(default)]
-    pub note: Option<String>,
-    pub ingested: String,
+    pub(crate) note: Option<String>,
+    pub(crate) ingested: String,
     #[serde(default)]
-    pub converter: Option<String>,
+    pub(crate) converter: Option<String>,
     #[serde(default)]
-    pub origin: Option<String>,
+    pub(crate) origin: Option<String>,
 }
 
 impl Manifest {
-    pub fn path(root: &Path) -> std::path::PathBuf {
+    pub(crate) fn path(root: &Path) -> std::path::PathBuf {
         crate::vault::tool_dir(root).join("manifest.json")
     }
     pub fn load(root: &Path) -> Result<Self> {
@@ -49,7 +49,7 @@ impl Manifest {
         let s = serde_json::to_string_pretty(self)?;
         fsutil::write_atomic(&Self::path(root), s.as_bytes())
     }
-    pub fn find_by_hash(&self, sha: &str) -> Option<(&String, &SourceRecord)> {
+    pub(crate) fn find_by_hash(&self, sha: &str) -> Option<(&String, &SourceRecord)> {
         self.sources.iter().find(|(_, r)| r.raw_sha256 == sha)
     }
 }

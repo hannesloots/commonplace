@@ -10,81 +10,81 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Pack {
-    pub name: String,
-    pub version: u32,
-    pub description: String,
-    pub types: BTreeMap<String, TypeSpec>,
-    pub rules: Vec<Rule>,
+    pub(crate) name: String,
+    pub(crate) version: u32,
+    pub(crate) description: String,
+    pub(crate) types: BTreeMap<String, TypeSpec>,
+    pub(crate) rules: Vec<Rule>,
     pub traces: Vec<Trace>,
-    pub personas: Vec<String>,
-    pub workflows: Vec<String>,
-    pub folders: Vec<String>,
+    pub(crate) personas: Vec<String>,
+    pub(crate) workflows: Vec<String>,
+    pub(crate) folders: Vec<String>,
     /// The jurisdiction profile that filled this pack's placeholders, if the
     /// pack has a `jurisdictions/` folder (legal pack).
     #[serde(skip)]
-    pub jurisdiction: Option<serde_yaml::Value>,
+    pub(crate) jurisdiction: Option<serde_yaml::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct TypeSpec {
-    pub description: String,
-    pub folder_hint: String,
-    pub required: Vec<String>,
-    pub enums: BTreeMap<String, Vec<String>>,
+pub(crate) struct TypeSpec {
+    pub(crate) description: String,
+    pub(crate) folder_hint: String,
+    pub(crate) required: Vec<String>,
+    pub(crate) enums: BTreeMap<String, Vec<String>>,
     /// Allowed `status` values for this type (overrides the core default).
-    pub status: Vec<String>,
-    pub links: BTreeMap<String, LinkSpec>,
+    pub(crate) status: Vec<String>,
+    pub(crate) links: BTreeMap<String, LinkSpec>,
     /// Whether pages of this type must carry sources/citations like synthesis pages.
-    pub cited: bool,
+    pub(crate) cited: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct LinkSpec {
-    pub to: Vec<String>,
-    pub min: usize,
-    pub severity: Option<String>,
-    pub description: String,
+pub(crate) struct LinkSpec {
+    pub(crate) to: Vec<String>,
+    pub(crate) min: usize,
+    pub(crate) severity: Option<String>,
+    pub(crate) description: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct Rule {
-    pub id: String,
-    pub severity: String,
-    pub when: When,
-    pub check: String,
-    pub message: String,
+pub(crate) struct Rule {
+    pub(crate) id: String,
+    pub(crate) severity: String,
+    pub(crate) when: When,
+    pub(crate) check: String,
+    pub(crate) message: String,
     // parameters (used by different checks)
-    pub field: String,
-    pub fields: Vec<String>,
-    pub values: Vec<String>,
-    pub to: Vec<String>,
-    pub min: usize,
-    pub op: String,
-    pub other: String,
-    pub pattern: String,
-    pub page_type: String,
-    pub page_field: String,
-    pub page_must: BTreeMap<String, String>,
-    pub years_back: u32,
+    pub(crate) field: String,
+    pub(crate) fields: Vec<String>,
+    pub(crate) values: Vec<String>,
+    pub(crate) to: Vec<String>,
+    pub(crate) min: usize,
+    pub(crate) op: String,
+    pub(crate) other: String,
+    pub(crate) pattern: String,
+    pub(crate) page_type: String,
+    pub(crate) page_field: String,
+    pub(crate) page_must: BTreeMap<String, String>,
+    pub(crate) years_back: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
-pub struct When {
+pub(crate) struct When {
     #[serde(rename = "type")]
-    pub ptype: Option<String>,
-    pub folder: Option<String>,
-    pub status_not: Vec<String>,
+    pub(crate) ptype: Option<String>,
+    pub(crate) folder: Option<String>,
+    pub(crate) status_not: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Trace {
     pub name: String,
-    pub description: String,
+    pub(crate) description: String,
     /// Alternating: type, link field, type, link field, type ...
     pub chain: Vec<String>,
 }
@@ -146,7 +146,7 @@ pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Res
 }
 
 /// Profile codes available in a pack's `jurisdictions/` folder.
-pub fn available_jurisdictions(jdir: &Path) -> Vec<String> {
+pub(crate) fn available_jurisdictions(jdir: &Path) -> Vec<String> {
     let mut v: Vec<String> = std::fs::read_dir(jdir)
         .map(|rd| {
             rd.flatten()
@@ -223,7 +223,7 @@ fn substitute(v: &mut serde_yaml::Value, profile: &serde_yaml::Value) {
 }
 
 /// Simple glob: `*` matches within a path segment, `**` matches across segments.
-pub fn glob_match(pattern: &str, path: &str) -> bool {
+pub(crate) fn glob_match(pattern: &str, path: &str) -> bool {
     fn to_regex(p: &str) -> String {
         let mut r = String::from("^");
         let mut chars = p.chars().peekable();

@@ -26,15 +26,15 @@ static PARA_MARK_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)"));
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Citation {
-    pub label: String,
-    pub source: String,
-    pub locator: Locator,
-    pub locator_raw: String,
-    pub quote: Option<String>,
-    pub comment: Option<String>,
-    pub line: usize,
-    pub raw: String,
+pub(crate) struct Citation {
+    pub(crate) label: String,
+    pub(crate) source: String,
+    pub(crate) locator: Locator,
+    pub(crate) locator_raw: String,
+    pub(crate) quote: Option<String>,
+    pub(crate) comment: Option<String>,
+    pub(crate) line: usize,
+    pub(crate) raw: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -115,7 +115,7 @@ pub fn parse_locator(s: &str) -> Locator {
 
 /// Parse all citation footnotes in a page body. Non-citation footnotes (no
 /// leading wikilink) are returned in the second list with their labels.
-pub fn parse_citations(body: &str) -> (Vec<Citation>, Vec<markdown::FootnoteDef>) {
+pub(crate) fn parse_citations(body: &str) -> (Vec<Citation>, Vec<markdown::FootnoteDef>) {
     let mut cites = vec![];
     let mut plain = vec![];
     for def in markdown::footnote_defs(body) {
@@ -150,7 +150,7 @@ pub fn parse_citations(body: &str) -> (Vec<Citation>, Vec<markdown::FootnoteDef>
 
 /// Normalise text for quote matching: NFKC, lowercase, straight quotes,
 /// plain hyphens, no soft hyphens, single spaces.
-pub fn normalise(s: &str) -> String {
+pub(crate) fn normalise(s: &str) -> String {
     // Markdown links and images compare by their visible text, so a URL that
     // changes (or was copied into a quote) can never break a match.
     // The link's title text (hover text) is kept too: it is visible content.
@@ -231,10 +231,6 @@ impl Haystack {
             joined,
             word_starts: starts,
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.words.is_empty()
     }
 
     /// Find a needle (already normalised words) as a whole-word subsequence.
@@ -420,13 +416,13 @@ pub struct CiteResult {
     pub source: String,
     pub locator: String,
     pub verdict: Verdict,
-    pub found_line: Option<usize>,
-    pub nearest_lines: Vec<usize>,
+    pub(crate) found_line: Option<usize>,
+    pub(crate) nearest_lines: Vec<usize>,
     pub message: String,
 }
 
 /// Verify one citation against the text layer of its source.
-pub fn verify_quote(
+pub(crate) fn verify_quote(
     text_layer: &str,
     cit: &Citation,
     min_words: usize,

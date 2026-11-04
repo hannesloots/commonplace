@@ -12,21 +12,21 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-pub const RAW_DIR: &str = "sources/raw";
-pub const TEXT_DIR: &str = "sources/text";
+pub(crate) const RAW_DIR: &str = "sources/raw";
+pub(crate) const TEXT_DIR: &str = "sources/text";
 pub const NOTES_DIR: &str = "sources/notes";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct IngestReport {
     pub id: String,
     pub raw: String,
-    pub raw_sha256: String,
+    pub(crate) raw_sha256: String,
     pub text: Option<String>,
     pub note: String,
     pub converter: String,
     pub fidelity: String,
     pub pages: Option<usize>,
-    pub needs_conversion: bool,
+    pub(crate) needs_conversion: bool,
     pub duplicate_of: Option<String>,
     pub warnings: Vec<String>,
 }
@@ -46,7 +46,7 @@ pub struct IngestOptions {
 }
 
 /// Build a source id `YYYY-MM-DD Short Title` from a title and date.
-pub fn make_id(title: &str, date: &str) -> String {
+pub(crate) fn make_id(title: &str, date: &str) -> String {
     let mut t = fsutil::safe_title(title);
     if t.chars().count() > 80 {
         t = t
@@ -381,7 +381,7 @@ fn set_readonly(p: &Path) {
     }
 }
 
-pub fn guess_kind(ext: &str) -> String {
+pub(crate) fn guess_kind(ext: &str) -> String {
     match ext {
         "pdf" | "docx" | "doc" | "odt" | "rtf" => "document",
         "pptx" | "ppt" => "slides",
@@ -397,19 +397,19 @@ pub fn guess_kind(ext: &str) -> String {
 }
 
 #[derive(Debug, Clone)]
-pub struct Converted {
-    pub text: String,
-    pub pages: Option<usize>,
+pub(crate) struct Converted {
+    pub(crate) text: String,
+    pub(crate) pages: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ConvertResult {
-    pub markdown: Option<Converted>,
-    pub converter: String,
-    pub fidelity: String,
-    pub reason: String,
-    pub warning: Option<String>,
-    pub outline: Option<String>,
+pub(crate) struct ConvertResult {
+    pub(crate) markdown: Option<Converted>,
+    pub(crate) converter: String,
+    pub(crate) fidelity: String,
+    pub(crate) reason: String,
+    pub(crate) warning: Option<String>,
+    pub(crate) outline: Option<String>,
 }
 
 impl ConvertResult {
@@ -476,7 +476,7 @@ fn convert_pdftotext(raw: &Path) -> Result<Option<ConvertResult>> {
 /// installed, in the configured preference order): pdftotext for PDF; pandoc
 /// for docx/odt/rtf/epub; markitdown for office formats. Anything else is left
 /// for the agent (`needs_conversion`).
-pub fn convert(
+pub(crate) fn convert(
     raw: &Path,
     ext: &str,
     config: &Config,
@@ -542,7 +542,7 @@ const HTML_SKIP_TAGS: &[&str] = &[
 /// HTML -> markdown. Site chrome is dropped and every relative link or image is
 /// resolved against `origin`, so the text layer holds no links that a vault
 /// viewer such as Obsidian would read as links to local files.
-pub fn html_to_markdown(html: &str, origin: Option<&str>) -> Result<String> {
+pub(crate) fn html_to_markdown(html: &str, origin: Option<&str>) -> Result<String> {
     let conv = htmd::HtmlToMarkdown::builder()
         .skip_tags(HTML_SKIP_TAGS.to_vec())
         .build();
@@ -561,7 +561,11 @@ static MD_LINK_URL_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"\]\(<?([^)
 /// `base`. `keep(href)` returning true leaves that target alone (used to
 /// protect links that point at real vault files). Returns the text and the
 /// number of targets rewritten.
-pub fn absolutise_links(md: &str, base: &str, keep: impl Fn(&str) -> bool) -> (String, usize) {
+pub(crate) fn absolutise_links(
+    md: &str,
+    base: &str,
+    keep: impl Fn(&str) -> bool,
+) -> (String, usize) {
     let mut n = 0usize;
     let out = MD_LINK_URL_RE.replace_all(md, |c: &regex::Captures<'_>| {
         let href = &c[1];
@@ -581,7 +585,7 @@ pub fn absolutise_links(md: &str, base: &str, keep: impl Fn(&str) -> bool) -> (S
 
 /// Resolve `href` against `base` (an absolute http(s) URL). Returns None when
 /// the target is already absolute, a fragment, or a non-web scheme.
-pub fn resolve_url(base: &str, href: &str) -> Option<String> {
+pub(crate) fn resolve_url(base: &str, href: &str) -> Option<String> {
     static SCHEME_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"^[A-Za-z][A-Za-z0-9+.\-]*:"));
     if href.is_empty() || href.starts_with('#') || SCHEME_RE.is_match(href) {
         return None;
@@ -636,7 +640,7 @@ fn normalise_path(p: &str) -> String {
 #[derive(Debug, Clone, Serialize)]
 pub struct RelinkReport {
     pub id: String,
-    pub origin: Option<String>,
+    pub(crate) origin: Option<String>,
     pub files_changed: Vec<String>,
     pub links_rewritten: usize,
     pub skipped: Option<String>,
@@ -750,7 +754,7 @@ pub fn which(cmd: &str) -> bool {
 }
 
 /// pdftotext separates pages with form feeds; turn them into page markers.
-pub fn page_markers_from_formfeeds(txt: &str) -> (String, usize) {
+pub(crate) fn page_markers_from_formfeeds(txt: &str) -> (String, usize) {
     let mut out = String::with_capacity(txt.len() + 64);
     let mut n = 0;
     for (i, page) in txt.split('\u{c}').enumerate() {
@@ -789,13 +793,13 @@ fn outline_from_markdown(md: &str) -> Option<String> {
 /// concatenated text plus a map from virtual line to (file, line).
 pub struct TextLayer {
     pub text: String,
-    pub parts: Vec<TextPart>,
+    pub(crate) parts: Vec<TextPart>,
 }
 
-pub struct TextPart {
-    pub rel: String,
-    pub start_line: usize, // 1-based virtual line where this part's body starts
-    pub lines: usize,
+pub(crate) struct TextPart {
+    pub(crate) rel: String,
+    pub(crate) start_line: usize, // 1-based virtual line where this part's body starts
+    pub(crate) lines: usize,
 }
 
 impl TextLayer {
@@ -812,7 +816,7 @@ impl TextLayer {
     }
 }
 
-pub fn text_layer_path(root: &Path, id: &str) -> Option<PathBuf> {
+pub(crate) fn text_layer_path(root: &Path, id: &str) -> Option<PathBuf> {
     let single = root.join(TEXT_DIR).join(format!("{id}.text.md"));
     if single.is_file() {
         return Some(single);
@@ -887,7 +891,7 @@ pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
 pub struct VerifyEntry {
     pub id: String,
     pub raw_ok: Option<bool>,
-    pub text_ok: Option<bool>,
+    pub(crate) text_ok: Option<bool>,
     pub message: String,
 }
 
@@ -980,7 +984,7 @@ pub fn attach_text(root: &Path, id: &str, converter: &str, fidelity: &str) -> Re
 }
 
 /// Source ids known to the manifest or present as notes.
-pub fn known_source_ids(root: &Path) -> Vec<String> {
+pub(crate) fn known_source_ids(root: &Path) -> Vec<String> {
     let mut ids: Vec<String> = Manifest::load(root)
         .map(|m| m.sources.keys().cloned().collect())
         .unwrap_or_default();

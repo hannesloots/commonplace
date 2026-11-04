@@ -4,9 +4,9 @@ use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FILE: &str = "commonplace.toml";
+pub(crate) const CONFIG_FILE: &str = "commonplace.toml";
 /// Name used before 0.5.0; still read and, if present, still written.
-pub const LEGACY_CONFIG_FILE: &str = "brain.toml";
+pub(crate) const LEGACY_CONFIG_FILE: &str = "brain.toml";
 
 /// The config file of a root: the current name, else the legacy one if it exists.
 pub fn config_path(root: &Path) -> PathBuf {
@@ -20,62 +20,62 @@ pub fn config_path(root: &Path) -> PathBuf {
     }
     cur
 }
-pub const SCHEMA_VERSION: u32 = 1;
+pub(crate) const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    pub schema_version: u32,
-    pub name: String,
-    pub purpose: String,
+    pub(crate) schema_version: u32,
+    pub(crate) name: String,
+    pub(crate) purpose: String,
     pub packs: Vec<String>,
     /// Jurisdiction profile for the legal pack: za, au, en, or a code you add
     /// under .commonplace/packs/legal/jurisdictions/. Empty = generic patterns.
     pub jurisdiction: String,
-    pub index: IndexConfig,
-    pub lint: LintConfig,
-    pub converters: ConvertersConfig,
-    pub privacy: PrivacyConfig,
+    pub(crate) index: IndexConfig,
+    pub(crate) lint: LintConfig,
+    pub(crate) converters: ConvertersConfig,
+    pub(crate) privacy: PrivacyConfig,
     pub review: ReviewConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct IndexConfig {
+pub(crate) struct IndexConfig {
     /// A folder whose page count passes this gets its own hub instead of inline lines in index.md.
-    pub hub_threshold: usize,
+    pub(crate) hub_threshold: usize,
     /// Hard ceiling for index.md lines before the tool refuses to inline more.
-    pub max_index_lines: usize,
+    pub(crate) max_index_lines: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct LintConfig {
+pub(crate) struct LintConfig {
     /// Pages whose `updated` is older than this many days get a stale warning (0 disables).
-    pub stale_days: u32,
+    pub(crate) stale_days: u32,
     /// Words that must no longer appear in non-superseded pages (old product names, retired terms).
-    pub retired_terms: Vec<String>,
+    pub(crate) retired_terms: Vec<String>,
     /// Rule ids to silence.
-    pub disabled_rules: Vec<String>,
+    pub(crate) disabled_rules: Vec<String>,
     /// Pages above this many words get an oversize warning.
-    pub max_words: usize,
+    pub(crate) max_words: usize,
     /// Minimum and maximum words in a citation quote.
-    pub quote_min_words: usize,
-    pub quote_max_words: usize,
+    pub(crate) quote_min_words: usize,
+    pub(crate) quote_max_words: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ConvertersConfig {
+pub(crate) struct ConvertersConfig {
     /// Preference order of external converters for PDF/DOCX: docling, marker, markitdown, pandoc, pdftotext.
-    pub prefer: Vec<String>,
+    pub(crate) prefer: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct PrivacyConfig {
+pub(crate) struct PrivacyConfig {
     /// confidentiality levels excluded from `commonplace export` unless --include is given.
-    pub exclude_from_export: Vec<String>,
+    pub(crate) exclude_from_export: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

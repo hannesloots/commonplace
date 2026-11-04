@@ -22,7 +22,7 @@ pub enum Severity {
 
 impl Severity {
     /// The lowercase name used in output and in pack rules.
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Severity::Error => "error",
             Severity::Warning => "warning",
@@ -74,7 +74,7 @@ pub struct LintOptions {
     pub rules: Option<Vec<String>>,
 }
 
-pub const SYNTHESIS_TYPES: &[&str] = &[
+pub(crate) const SYNTHESIS_TYPES: &[&str] = &[
     "concept",
     "entity",
     "synthesis",
@@ -82,19 +82,19 @@ pub const SYNTHESIS_TYPES: &[&str] = &[
     "playbook",
     "decision",
 ];
-pub const STATUS_DEFAULT: &[&str] = &["seed", "growing", "mature", "superseded"];
-pub const CONFIDENCE: &[&str] = &["high", "medium", "low", "contested"];
-pub const CONFIDENTIALITY: &[&str] = &["public", "personal", "confidential", "privileged"];
-pub const AUTHORITY: &[&str] = &["primary", "secondary", "tertiary"];
-pub const FIDELITY: &[&str] = &["high", "medium", "low", "none"];
+pub(crate) const STATUS_DEFAULT: &[&str] = &["seed", "growing", "mature", "superseded"];
+pub(crate) const CONFIDENCE: &[&str] = &["high", "medium", "low", "contested"];
+pub(crate) const CONFIDENTIALITY: &[&str] = &["public", "personal", "confidential", "privileged"];
+pub(crate) const AUTHORITY: &[&str] = &["primary", "secondary", "tertiary"];
+pub(crate) const FIDELITY: &[&str] = &["high", "medium", "low", "none"];
 
-pub struct TypeRules {
-    pub required: Vec<&'static str>,
-    pub status: Vec<&'static str>,
-    pub cited: bool,
+pub(crate) struct TypeRules {
+    pub(crate) required: Vec<&'static str>,
+    pub(crate) status: Vec<&'static str>,
+    pub(crate) cited: bool,
 }
 
-pub fn core_type(t: &str) -> Option<TypeRules> {
+pub(crate) fn core_type(t: &str) -> Option<TypeRules> {
     let base = |req: &[&'static str], status: &[&'static str], cited: bool| {
         Some(TypeRules {
             required: req.to_vec(),

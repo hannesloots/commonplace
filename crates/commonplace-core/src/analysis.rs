@@ -26,14 +26,14 @@ const SYNTHESIS: &[&str] = &[
 const HUB_TYPES: &[&str] = &["topic", "project", "area"];
 
 /// Undirected weighted view of the graph for the algorithms.
-pub struct Net {
-    pub n: usize,
-    pub adj: Vec<Vec<(usize, f64)>>,
-    pub id_of: HashMap<String, usize>,
+pub(crate) struct Net {
+    pub(crate) n: usize,
+    pub(crate) adj: Vec<Vec<(usize, f64)>>,
+    pub(crate) id_of: HashMap<String, usize>,
 }
 
 impl Net {
-    pub fn from_graph(g: &Graph) -> Net {
+    pub(crate) fn from_graph(g: &Graph) -> Net {
         let mut id_of = HashMap::new();
         for (i, n) in g.nodes.iter().enumerate() {
             id_of.insert(n.id.to_lowercase(), i);
@@ -68,7 +68,7 @@ impl Net {
         }
     }
 
-    pub fn degree(&self, i: usize) -> usize {
+    pub(crate) fn degree(&self, i: usize) -> usize {
         self.adj[i].len()
     }
 
@@ -77,13 +77,13 @@ impl Net {
     }
 
     /// `PageRank` on the undirected graph (power iteration).
-    pub fn pagerank(&self) -> Vec<f64> {
+    pub(crate) fn pagerank(&self) -> Vec<f64> {
         self.personalised_pagerank(&[], 0.85)
     }
 
     /// Personalised `PageRank`: the random walker restarts at `seeds` (all nodes
     /// when empty). `damping` is the follow-a-link probability.
-    pub fn personalised_pagerank(&self, seeds: &[usize], damping: f64) -> Vec<f64> {
+    pub(crate) fn personalised_pagerank(&self, seeds: &[usize], damping: f64) -> Vec<f64> {
         let n = self.n;
         if n == 0 {
             return vec![];
@@ -130,7 +130,7 @@ impl Net {
 
     /// Adamic-Adar: shared neighbours weighted by 1/ln(degree), so a shared
     /// niche page counts more than a shared hub.
-    pub fn adamic_adar(&self, a: usize, b: usize) -> (f64, Vec<usize>) {
+    pub(crate) fn adamic_adar(&self, a: usize, b: usize) -> (f64, Vec<usize>) {
         let na = self.neighbour_set(a);
         let nb = self.neighbour_set(b);
         let mut score = 0.0;
@@ -148,7 +148,7 @@ impl Net {
 
     /// Louvain community detection (modularity optimisation with
     /// aggregation). Deterministic: nodes are visited in index order.
-    pub fn louvain(&self) -> Vec<usize> {
+    pub(crate) fn louvain(&self) -> Vec<usize> {
         let mut adj: Vec<Vec<(usize, f64)>> = self.adj.clone();
         let mut membership: Vec<usize> = (0..self.n).collect();
         for _level in 0..20 {
@@ -169,7 +169,7 @@ impl Net {
     }
 
     /// Betweenness centrality (Brandes, unweighted). Sampled above 2000 nodes.
-    pub fn betweenness(&self) -> Vec<f64> {
+    pub(crate) fn betweenness(&self) -> Vec<f64> {
         let n = self.n;
         let mut cb = vec![0.0; n];
         let sources: Vec<usize> = if n > 2000 {
@@ -327,7 +327,7 @@ pub struct RelatedRow {
     pub label: String,
     pub score: f64,
     pub reasons: Vec<String>,
-    pub description: String,
+    pub(crate) description: String,
 }
 
 /// Pages related to `page`, each with why: direct links, co-citation,
@@ -750,7 +750,7 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LinkSuggestion {
-    pub page: String,
+    pub(crate) page: String,
     pub path: String,
     pub line: usize,
     pub target: String,
@@ -932,7 +932,7 @@ pub struct ConflictCandidate {
     pub ptype: String,
     pub score: f64,
     pub reasons: Vec<String>,
-    pub updated: (String, String),
+    pub(crate) updated: (String, String),
 }
 
 /// Pages that can contradict each other: knowledge pages, not navigation or raw material.

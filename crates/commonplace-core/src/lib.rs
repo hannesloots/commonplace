@@ -12,7 +12,7 @@ pub mod graph;
 pub mod index;
 pub mod lint;
 pub mod manifest;
-pub mod markdown;
+mod markdown;
 pub mod ops;
 pub mod pack;
 pub mod query;

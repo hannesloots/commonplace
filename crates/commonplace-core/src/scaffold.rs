@@ -33,7 +33,7 @@ macro_rules! pack_file {
 }
 
 /// Root-level files written once at init (name, content). `{{...}}` placeholders are filled.
-pub const ROOT_FILES: &[(&str, &str)] = &[
+pub(crate) const ROOT_FILES: &[(&str, &str)] = &[
     tpl!("AGENTS.md"),
     tpl!("CLAUDE.md"),
     tpl!("TAGS.md"),
@@ -46,7 +46,7 @@ pub const ROOT_FILES: &[(&str, &str)] = &[
 ];
 
 /// Page templates copied to `.commonplace/templates/<type>.md` and used by `commonplace new`.
-pub const PAGE_TEMPLATES: &[(&str, &str)] = &[
+pub(crate) const PAGE_TEMPLATES: &[(&str, &str)] = &[
     tpl!("concept.md"),
     tpl!("entity.md"),
     tpl!("synthesis.md"),
@@ -66,14 +66,14 @@ pub const PAGE_TEMPLATES: &[(&str, &str)] = &[
 ];
 
 /// Memory pages created at init (relative path, template name).
-pub const MEMORY_PAGES: &[(&str, &str)] = &[
+pub(crate) const MEMORY_PAGES: &[(&str, &str)] = &[
     ("memory/Profile.md", "profile.md"),
     ("memory/Preferences.md", "preferences.md"),
     ("memory/Glossary.md", "glossary.md"),
 ];
 
 /// Pack files (pack-relative path, content).
-pub const PACK_FILES: &[(&str, &str)] = &[
+pub(crate) const PACK_FILES: &[(&str, &str)] = &[
     pack_file!("ea", "pack.yaml"),
     pack_file!("ea", "templates/capability.md"),
     pack_file!("ea", "templates/use-case.md"),
@@ -115,7 +115,7 @@ pub const PACK_FILES: &[(&str, &str)] = &[
     pack_file!("study", "templates/exam.md"),
 ];
 
-pub const DIRS: &[&str] = &[
+pub(crate) const DIRS: &[&str] = &[
     "inbox",
     "journal",
     "sources/raw",
@@ -329,11 +329,11 @@ pub struct NewReport {
     pub path: String,
     #[serde(rename = "type")]
     pub ptype: String,
-    pub title: String,
+    pub(crate) title: String,
 }
 
 /// Default folder for a core type. Pack types use their `folder_hint` (or --folder).
-pub fn default_folder(ptype: &str, title: &str) -> Option<String> {
+pub(crate) fn default_folder(ptype: &str, title: &str) -> Option<String> {
     let slug = fsutil::slug(title, 60);
     Some(match ptype {
         "concept" | "claim" => "resources/concepts".into(),

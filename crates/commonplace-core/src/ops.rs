@@ -48,7 +48,7 @@ pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
     let mut moved = 0;
     let mut by_year: BTreeMap<String, String> = BTreeMap::new();
     for i in 0..cut {
-        let end = starts.get(i + 1).map(|s| s.0).unwrap_or(doc.body.len());
+        let end = starts.get(i + 1).map_or(doc.body.len(), |s| s.0);
         by_year
             .entry(starts[i].1.clone())
             .or_default()
@@ -78,35 +78,35 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
             .arg(root)
             .args(["status", "--porcelain", "--untracked-files=all"])
             .output();
-        if let Ok(o) = out {
-            if o.status.success() {
-                for line in String::from_utf8_lossy(&o.stdout).lines() {
-                    if line.len() < 4 {
-                        continue;
-                    }
-                    let path = line[3..].trim();
-                    let path = path.rsplit(" -> ").next().unwrap_or(path).trim_matches('"');
-                    if path.ends_with(".md") {
-                        set.insert(path.to_string());
-                    }
+        if let Ok(o) = out
+            && o.status.success()
+        {
+            for line in String::from_utf8_lossy(&o.stdout).lines() {
+                if line.len() < 4 {
+                    continue;
                 }
-                // also files changed in the last commit if the tree is clean
-                if set.is_empty() {
-                    let o2 = std::process::Command::new("git")
-                        .arg("-C")
-                        .arg(root)
-                        .args(["diff", "--name-only", "HEAD~1", "HEAD"])
-                        .output();
-                    if let Ok(o2) = o2 {
-                        for line in String::from_utf8_lossy(&o2.stdout).lines() {
-                            if line.ends_with(".md") {
-                                set.insert(line.trim().to_string());
-                            }
+                let path = line[3..].trim();
+                let path = path.rsplit(" -> ").next().unwrap_or(path).trim_matches('"');
+                if path.ends_with(".md") {
+                    set.insert(path.to_string());
+                }
+            }
+            // also files changed in the last commit if the tree is clean
+            if set.is_empty() {
+                let o2 = std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(root)
+                    .args(["diff", "--name-only", "HEAD~1", "HEAD"])
+                    .output();
+                if let Ok(o2) = o2 {
+                    for line in String::from_utf8_lossy(&o2.stdout).lines() {
+                        if line.ends_with(".md") {
+                            set.insert(line.trim().to_string());
                         }
                     }
                 }
-                return Ok(set);
             }
+            return Ok(set);
         }
     }
     let manifest = crate::manifest::Manifest::load(root)?;
@@ -118,7 +118,7 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
     for path in crate::vault::walk_markdown(root) {
         let m = std::fs::metadata(&path)?.modified()?;
         let mt: chrono::DateTime<chrono::Local> = m.into();
-        if since.map(|s| mt > s).unwrap_or(true) {
+        if since.is_none_or(|s| mt > s) {
             set.insert(fsutil::rel(root, &path));
         }
     }
@@ -160,8 +160,8 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
             continue;
         }
         let out = re.replace_all(&text, |c: &regex::Captures| {
-            let h = c.get(1).map(|m| m.as_str()).unwrap_or("");
-            let a = c.get(2).map(|m| m.as_str()).unwrap_or("");
+            let h = c.get(1).map_or("", |m| m.as_str());
+            let a = c.get(2).map_or("", |m| m.as_str());
             format!("[[{new_title}{h}{a}]]")
         });
         fsutil::write_atomic(&p.path, out.as_bytes())?;
@@ -277,7 +277,7 @@ pub struct TraceRow {
 /// Follow a chain `type, field, type, field, type` and produce rows. A page
 /// with no link in `field` yields a row padded with "—" (a gap).
 pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceRow>)> {
-    if chain.len() < 3 || chain.len() % 2 == 0 {
+    if chain.len() < 3 || chain.len().is_multiple_of(2) {
         bail!("chain must be type, field, type[, field, type ...]");
     }
     let header: Vec<String> = chain.iter().step_by(2).cloned().collect();
@@ -318,12 +318,7 @@ pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceR
                     }
                 }
             }
-            targets.retain(|t| {
-                vault
-                    .resolve_page(t)
-                    .map(|q| q.ptype == *want_type)
-                    .unwrap_or(false)
-            });
+            targets.retain(|t| vault.resolve_page(t).is_some_and(|q| q.ptype == *want_type));
             if targets.is_empty() {
                 let mut r = row.clone();
                 r.push("—".into());
@@ -377,18 +372,17 @@ pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
     let mut moved = vec![];
     for p in crate::vault::walk_markdown(&dest) {
         let text = std::fs::read_to_string(&p)?;
-        if let Ok(mut doc) = frontmatter::parse(&text) {
-            if doc.has_frontmatter
-                && ["project", "area"].contains(
-                    &frontmatter::get_str(&doc.fm, "type")
-                        .unwrap_or_default()
-                        .as_str(),
-                )
-            {
-                frontmatter::set_str(&mut doc.fm, "status", "archived");
-                frontmatter::set_str(&mut doc.fm, "archived", &fsutil::today());
-                fsutil::write_atomic(&p, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())?;
-            }
+        if let Ok(mut doc) = frontmatter::parse(&text)
+            && doc.has_frontmatter
+            && ["project", "area"].contains(
+                &frontmatter::get_str(&doc.fm, "type")
+                    .unwrap_or_default()
+                    .as_str(),
+            )
+        {
+            frontmatter::set_str(&mut doc.fm, "status", "archived");
+            frontmatter::set_str(&mut doc.fm, "archived", &fsutil::today());
+            fsutil::write_atomic(&p, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())?;
         }
         moved.push(fsutil::rel(&vault.root, &p));
     }
@@ -416,7 +410,7 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
         }
     }
     if pages.is_empty() {
-        bail!("nothing matched {:?}", targets);
+        bail!("nothing matched {targets:?}");
     }
     let mut out = String::new();
     let mut bib: BTreeMap<String, &Page> = BTreeMap::new();
@@ -538,8 +532,7 @@ pub fn status(vault: &Vault) -> Result<Status> {
             s.active_projects.push(p.stem.clone());
             if p.list("next_actions").is_empty()
                 && markdown::section(&p.doc.body, "Next actions")
-                    .map(|x| !markdown::has_prose(x))
-                    .unwrap_or(true)
+                    .is_none_or(|x| !markdown::has_prose(x))
             {
                 s.projects_without_next_action.push(p.stem.clone());
             }
@@ -600,7 +593,7 @@ pub fn review_packet(
         }
     }
     if pages.is_empty() {
-        bail!("nothing matched {:?}", targets);
+        bail!("nothing matched {targets:?}");
     }
     let mut out = String::new();
     out.push_str(&format!("# Review packet — persona: {persona}\n\nGenerated {} by `commonplace review prepare`. Pages: {}\n\n", fsutil::now_iso(), pages.iter().map(|p| p.rel.clone()).collect::<Vec<_>>().join(", ")));
@@ -630,7 +623,7 @@ pub fn review_packet(
                         vault.config.lint.quote_min_words,
                         vault.config.lint.quote_max_words,
                     );
-                    out.push_str(&format!("Deterministic check: **{:?}** — {}\n\n", v, msg));
+                    out.push_str(&format!("Deterministic check: **{v:?}** — {msg}\n\n"));
                     let lines: Vec<&str> = tl.text.lines().collect();
                     let centre = found.or_else(|| {
                         cite::span(&tl.text, &c.locator).and_then(|s| s.first().map(|x| x.0))
@@ -738,7 +731,7 @@ pub fn review_record(
         v
     };
     for p in all_pages {
-        let n = per_page.get(&p.rel).map(|v| v.len()).unwrap_or(0);
+        let n = per_page.get(&p.rel).map_or(0, std::vec::Vec::len);
         let text = std::fs::read_to_string(&p.path)?;
         let mut doc = frontmatter::parse(&text)?;
         let mut reviews = match doc.fm.get("reviews") {

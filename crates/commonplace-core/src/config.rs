@@ -157,10 +157,10 @@ impl Config {
         let mut packs = vec![];
         for p in &c.packs {
             let (name, jur) = crate::scaffold::normalise_pack(p);
-            if let Some(j) = jur {
-                if c.jurisdiction.is_empty() {
-                    c.jurisdiction = j.to_string();
-                }
+            if let Some(j) = jur
+                && c.jurisdiction.is_empty()
+            {
+                c.jurisdiction = j.to_string();
             }
             if !packs.contains(&name) {
                 packs.push(name);
@@ -183,7 +183,7 @@ pub fn find_root(start: &Path) -> Result<PathBuf> {
         if dir.join(CONFIG_FILE).is_file() || dir.join(LEGACY_CONFIG_FILE).is_file() {
             return Ok(dir);
         }
-        cur = dir.parent().map(|p| p.to_path_buf());
+        cur = dir.parent().map(std::path::Path::to_path_buf);
     }
     Err(anyhow!(
         "no {CONFIG_FILE} found in {} or its parents (run `commonplace init` or pass --root)",

@@ -58,15 +58,12 @@ pub fn mask_comments(text: &str) -> String {
     let mut rest = text;
     while let Some(s) = rest.find("<!--") {
         out.push_str(&rest[..s]);
-        match rest[s..].find("-->") {
-            Some(e) => {
-                out.push_str(&blank(&rest[s..s + e + 3]));
-                rest = &rest[s + e + 3..];
-            }
-            None => {
-                out.push_str(&blank(&rest[s..]));
-                rest = "";
-            }
+        if let Some(e) = rest[s..].find("-->") {
+            out.push_str(&blank(&rest[s..s + e + 3]));
+            rest = &rest[s + e + 3..];
+        } else {
+            out.push_str(&blank(&rest[s..]));
+            rest = "";
         }
     }
     out.push_str(rest);
@@ -215,10 +212,10 @@ fn find_block(text: &str, name: &str) -> Option<(usize, usize, usize, usize)> {
     for prefix in MARKER_PREFIXES {
         let start = format!("<!-- {prefix}:{name}:start -->");
         let end = format!("<!-- {prefix}:{name}:end -->");
-        if let Some(s) = text.find(&start) {
-            if let Some(e) = text[s..].find(&end).map(|e| e + s) {
-                return Some((s, s + start.len(), e, e + end.len()));
-            }
+        if let Some(s) = text.find(&start)
+            && let Some(e) = text[s..].find(&end).map(|e| e + s)
+        {
+            return Some((s, s + start.len(), e, e + end.len()));
         }
     }
     None

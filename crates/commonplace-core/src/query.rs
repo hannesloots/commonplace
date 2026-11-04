@@ -1,5 +1,5 @@
 //! Dataview-like frontmatter queries:
-//!   type=capability and target_maturity>baseline_maturity
+//!   type=capability and `target_maturity>baseline_maturity`
 //!   status!=archived or tags has topic/law
 //!   folder~projects/matter-x and not confidence=low
 //! Operators: = != > < >= <= ~ (substring, case-insensitive) has (list contains) exists
@@ -215,7 +215,7 @@ fn cmp_values(a: &str, op: &str, b: &str) -> bool {
         (Ok(x), Ok(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
         _ => a.to_lowercase().cmp(&b.to_lowercase()),
     };
-    use std::cmp::Ordering::*;
+    use std::cmp::Ordering::{Equal, Greater, Less};
     match op {
         "=" => ord == Equal,
         "!=" => ord != Equal,
@@ -236,7 +236,7 @@ pub fn eval(e: &Expr, page: &Page) -> bool {
         Expr::Cmp { field, op, rhs } => {
             let lv = field_value(page, field);
             if op == "exists" {
-                return lv.map(|v| !v.is_null()).unwrap_or(false);
+                return lv.is_some_and(|v| !v.is_null());
             }
             let rv: Option<String> = match rhs {
                 Rhs::Lit(s) => Some(s.clone()),

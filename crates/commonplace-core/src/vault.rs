@@ -258,12 +258,12 @@ impl Vault {
         let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
         for (i, p) in self.pages.iter().enumerate() {
             for t in p.all_link_targets() {
-                if let Resolution::Found(j) = self.resolve(&t) {
-                    if j != i {
-                        let e = map.entry(j).or_default();
-                        if !e.contains(&i) {
-                            e.push(i);
-                        }
+                if let Resolution::Found(j) = self.resolve(&t)
+                    && j != i
+                {
+                    let e = map.entry(j).or_default();
+                    if !e.contains(&i) {
+                        e.push(i);
                     }
                 }
             }
@@ -310,7 +310,7 @@ pub fn walk_markdown(root: &Path) -> Vec<PathBuf> {
         })
         .build();
     for e in walker.flatten() {
-        if e.file_type().map(|t| t.is_file()).unwrap_or(false) && fsutil::is_markdown(e.path()) {
+        if e.file_type().is_some_and(|t| t.is_file()) && fsutil::is_markdown(e.path()) {
             let rel = fsutil::rel(root, e.path());
             if SKIP_FILES.contains(&rel.as_str()) {
                 continue;
@@ -324,7 +324,7 @@ pub fn walk_markdown(root: &Path) -> Vec<PathBuf> {
 pub fn load_page(root: &Path, path: &Path) -> Result<Page> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let doc = frontmatter::parse(&text).with_context(|| format!("{}", fsutil::rel(root, path)))?;
+    let doc = frontmatter::parse(&text).with_context(|| fsutil::rel(root, path).clone())?;
     let ptype = frontmatter::get_str(&doc.fm, "type").unwrap_or_default();
     let stem = fsutil::stem(path);
     let title = frontmatter::get_str(&doc.fm, "title")
@@ -337,7 +337,7 @@ pub fn load_page(root: &Path, path: &Path) -> Result<Page> {
         .collect();
     let body_links = markdown::wikilinks(&doc.body);
     let mut fm_links = vec![];
-    for (k, v) in doc.fm.iter() {
+    for (k, v) in &doc.fm {
         let key = frontmatter::scalar_to_string(k);
         let text = frontmatter::scalar_to_string(v);
         for t in markdown::wikilink_targets_in(&text) {

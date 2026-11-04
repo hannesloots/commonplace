@@ -80,10 +80,7 @@ pub fn parse_locator(s: &str) -> Locator {
     });
     if let Some(c) = L_RE.captures(t) {
         let a: usize = c[1].parse().unwrap_or(1);
-        let b: usize = c
-            .get(2)
-            .map(|m| m.as_str().parse().unwrap_or(a))
-            .unwrap_or(a);
+        let b: usize = c.get(2).map_or(a, |m| m.as_str().parse().unwrap_or(a));
         return Locator::Line {
             from: a.min(b),
             to: a.max(b),
@@ -91,10 +88,7 @@ pub fn parse_locator(s: &str) -> Locator {
     }
     if let Some(c) = P_RE.captures(t) {
         let a: u32 = c[1].parse().unwrap_or(1);
-        let b: u32 = c
-            .get(2)
-            .map(|m| m.as_str().parse().unwrap_or(a))
-            .unwrap_or(a);
+        let b: u32 = c.get(2).map_or(a, |m| m.as_str().parse().unwrap_or(a));
         return Locator::Page {
             from: a.min(b),
             to: a.max(b),
@@ -102,10 +96,7 @@ pub fn parse_locator(s: &str) -> Locator {
     }
     if let Some(c) = PARA_RE.captures(t) {
         let a: u32 = c[1].parse().unwrap_or(1);
-        let b: u32 = c
-            .get(2)
-            .map(|m| m.as_str().parse().unwrap_or(a))
-            .unwrap_or(a);
+        let b: u32 = c.get(2).map_or(a, |m| m.as_str().parse().unwrap_or(a));
         return Locator::Para {
             from: a.min(b),
             to: a.max(b),
@@ -206,22 +197,20 @@ impl Haystack {
         let mut line_of: Vec<usize> = vec![];
         for (ln, text) in lines {
             let norm = normalise(text);
-            let mut iter = norm.split(' ').filter(|w| !w.is_empty()).peekable();
+            let iter = norm.split(' ').filter(|w| !w.is_empty()).peekable();
             let mut first = true;
-            while let Some(w) = iter.next() {
+            for w in iter {
                 // join end-of-line hyphenation: "inter-" + "national"
-                if first {
-                    if let Some(last) = words.last_mut() {
-                        if last.ends_with('-')
-                            && last.len() > 1
-                            && w.chars().next().map(|c| c.is_lowercase()).unwrap_or(false)
-                        {
-                            last.pop();
-                            last.push_str(w);
-                            first = false;
-                            continue;
-                        }
-                    }
+                if first
+                    && let Some(last) = words.last_mut()
+                    && last.ends_with('-')
+                    && last.len() > 1
+                    && w.chars().next().is_some_and(char::is_lowercase)
+                {
+                    last.pop();
+                    last.push_str(w);
+                    first = false;
+                    continue;
                 }
                 first = false;
                 words.push(w.to_string());
@@ -282,7 +271,7 @@ impl Haystack {
             .replace('…', "...");
         let segments: Vec<&str> = norm
             .split("...")
-            .map(|s| s.trim())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
             .collect();
         if segments.is_empty() {
@@ -359,12 +348,12 @@ pub fn span<'a>(text: &'a str, loc: &Locator) -> Option<Vec<(usize, &'a str)>> {
             for (ln, l) in &lines {
                 if let Some(c) = PAGE_MARK_RE.captures(l) {
                     cur = c[1].parse().ok();
-                    if cur.map(|p| p >= *from && p <= *to).unwrap_or(false) {
+                    if cur.is_some_and(|p| p >= *from && p <= *to) {
                         seen = true;
                     }
                     continue;
                 }
-                if cur.map(|p| p >= *from && p <= *to).unwrap_or(false) {
+                if cur.is_some_and(|p| p >= *from && p <= *to) {
                     out.push((*ln, *l));
                 }
             }
@@ -377,11 +366,11 @@ pub fn span<'a>(text: &'a str, loc: &Locator) -> Option<Vec<(usize, &'a str)>> {
             for (ln, l) in &lines {
                 if let Some(c) = PARA_MARK_RE.captures(l) {
                     cur = c.get(1).or(c.get(2)).and_then(|m| m.as_str().parse().ok());
-                    if cur.map(|p| p >= *from && p <= *to).unwrap_or(false) {
+                    if cur.is_some_and(|p| p >= *from && p <= *to) {
                         seen = true;
                     }
                 }
-                if cur.map(|p| p >= *from && p <= *to).unwrap_or(false) {
+                if cur.is_some_and(|p| p >= *from && p <= *to) {
                     out.push((*ln, *l));
                 }
             }
@@ -395,16 +384,14 @@ pub fn span<'a>(text: &'a str, loc: &Locator) -> Option<Vec<(usize, &'a str)>> {
                     && t[id.len()..]
                         .chars()
                         .next()
-                        .map(|c| !c.is_ascii_digit())
-                        .unwrap_or(true)
+                        .is_none_or(|c| !c.is_ascii_digit())
             })?;
             let level = hs[idx].level;
             let start = hs[idx].line;
             let end = hs[idx + 1..]
                 .iter()
                 .find(|h| h.level <= level)
-                .map(|h| h.line - 1)
-                .unwrap_or(lines.len());
+                .map_or(lines.len(), |h| h.line - 1);
             Some(lines[start - 1..end].to_vec())
         }
     }
@@ -491,8 +478,8 @@ pub fn verify_quote(
             if let Some(l) = hay.verify(q) {
                 return (Verdict::Pass, Some(l), vec![], format!("ok (L{l})"));
             }
-            match whole.verify(q) {
-                Some(l) => (
+            if let Some(l) = whole.verify(q) {
+                (
                     Verdict::QuoteNotInSpan,
                     Some(l),
                     vec![l],
@@ -500,27 +487,26 @@ pub fn verify_quote(
                         "quote found at L{l}, which is outside the cited span '{}'",
                         cit.locator_raw
                     ),
-                ),
-                None => {
-                    let near = whole.nearest_lines(q, 3);
-                    let hint = if near.is_empty() {
-                        String::new()
-                    } else {
-                        format!(
-                            "; closest lines: {}",
-                            near.iter()
-                                .map(|l| format!("L{l}"))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    };
-                    (
-                        Verdict::QuoteNotFound,
-                        None,
-                        near,
-                        format!("quote not found in source text{hint}"),
+                )
+            } else {
+                let near = whole.nearest_lines(q, 3);
+                let hint = if near.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "; closest lines: {}",
+                        near.iter()
+                            .map(|l| format!("L{l}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     )
-                }
+                };
+                (
+                    Verdict::QuoteNotFound,
+                    None,
+                    near,
+                    format!("quote not found in source text{hint}"),
+                )
             }
         }
     }
@@ -618,6 +604,6 @@ mod tests {
         };
         let (v, _, near, _) = verify_quote(text, &cit4, 3, 80);
         assert_eq!(v, Verdict::QuoteNotFound);
-        assert!(!near.is_empty());
+        assert_ne!(near, [] as [usize; 0]);
     }
 }

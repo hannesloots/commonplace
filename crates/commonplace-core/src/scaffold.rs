@@ -275,8 +275,7 @@ pub fn init(
         let content = PAGE_TEMPLATES
             .iter()
             .find(|(n, _)| n == tname)
-            .map(|(_, c)| *c)
-            .unwrap_or("");
+            .map_or("", |(_, c)| *c);
         let title = fsutil::stem(Path::new(rel));
         if fsutil::write_if_absent(
             &root.join(rel),
@@ -333,7 +332,7 @@ pub struct NewReport {
     pub title: String,
 }
 
-/// Default folder for a core type. Pack types use their folder_hint (or --folder).
+/// Default folder for a core type. Pack types use their `folder_hint` (or --folder).
 pub fn default_folder(ptype: &str, title: &str) -> Option<String> {
     let slug = fsutil::slug(title, 60);
     Some(match ptype {

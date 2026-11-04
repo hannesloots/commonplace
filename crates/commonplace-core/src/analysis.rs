@@ -1,5 +1,5 @@
 //! Graph analysis over the page graph, in memory: related pages, hubs
-//! (PageRank), communities (Louvain), gaps (wanted pages, orphans, dead ends,
+//! (`PageRank`), communities (Louvain), gaps (wanted pages, orphans, dead ends,
 //! uncited sources, bridges), unlinked mentions and contradiction candidates.
 //! Every result carries its reason so the agent can judge, not just trust.
 
@@ -56,7 +56,7 @@ impl Net {
         }
         let mut adj = vec![vec![]; g.nodes.len()];
         let mut keys: Vec<_> = pairs.into_iter().collect();
-        keys.sort_by(|x, y| x.0.cmp(&y.0));
+        keys.sort_by_key(|x| x.0);
         for ((a, b), w) in keys {
             adj[a].push((b, w));
             adj[b].push((a, w));
@@ -76,12 +76,12 @@ impl Net {
         self.adj[i].iter().map(|(_, w)| w).sum()
     }
 
-    /// PageRank on the undirected graph (power iteration).
+    /// `PageRank` on the undirected graph (power iteration).
     pub fn pagerank(&self) -> Vec<f64> {
         self.personalised_pagerank(&[], 0.85)
     }
 
-    /// Personalised PageRank: the random walker restarts at `seeds` (all nodes
+    /// Personalised `PageRank`: the random walker restarts at `seeds` (all nodes
     /// when empty). `damping` is the follow-a-link probability.
     pub fn personalised_pagerank(&self, seeds: &[usize], damping: f64) -> Vec<f64> {
         let n = self.n;
@@ -142,7 +142,7 @@ impl Net {
                 shared.push(*z);
             }
         }
-        shared.sort();
+        shared.sort_unstable();
         (score, shared)
     }
 
@@ -187,7 +187,7 @@ impl Net {
                         |c: usize| k_in.get(&c).copied().unwrap_or(0.0) - tot[c] * k[i] / two_m;
                     let mut best = ci;
                     let mut best_gain = gain(ci);
-                    for (&c, _) in &k_in {
+                    for &c in k_in.keys() {
                         let g = gain(c);
                         if g > best_gain + 1e-12 {
                             best_gain = g;
@@ -215,7 +215,7 @@ impl Net {
                 renum.entry(c).or_insert(next);
             }
             let comm: Vec<usize> = comm.iter().map(|c| renum[c]).collect();
-            for m in membership.iter_mut() {
+            for m in &mut membership {
                 *m = comm[*m];
             }
             let nc = renum.len();
@@ -239,7 +239,7 @@ impl Net {
                 .into_iter()
                 .map(|m| {
                     let mut v: Vec<(usize, f64)> = m.into_iter().collect();
-                    v.sort_by(|x, y| x.0.cmp(&y.0));
+                    v.sort_by_key(|x| x.0);
                     v
                 })
                 .collect();
@@ -373,12 +373,12 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
                 if let Some(&j) = net.id_of.get(&t) {
                     m.entry(j).or_default().insert(e.rel.clone());
                 }
-            } else if t == pid {
-                if let Some(&j) = net.id_of.get(&f) {
-                    m.entry(j)
-                        .or_default()
-                        .insert(format!("{} (inbound)", e.rel));
-                }
+            } else if t == pid
+                && let Some(&j) = net.id_of.get(&f)
+            {
+                m.entry(j)
+                    .or_default()
+                    .insert(format!("{} (inbound)", e.rel));
             }
         }
         m
@@ -434,7 +434,7 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
             let r = ppr[c] / ppr_max;
             if r > 0.05 {
                 score += r;
-                reasons.push(format!("random-walk proximity {:.2}", r));
+                reasons.push(format!("random-walk proximity {r:.2}"));
             }
         }
         if score > 0.0 {
@@ -459,8 +459,7 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
 
 fn display_id(g: &Graph, lower: &str) -> String {
     g.node(lower)
-        .map(|n| n.id.clone())
-        .unwrap_or_else(|| lower.to_string())
+        .map_or_else(|| lower.to_string(), |n| n.id.clone())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -534,12 +533,11 @@ pub fn communities(g: &Graph, min_size: usize) -> Vec<Community> {
             }
         }
         for e in &g.edges {
-            if e.rel == "cites" {
-                if let Some(&f) = net.id_of.get(&e.from.to_lowercase()) {
-                    if set.contains(&f) {
-                        sources.insert(e.to.to_lowercase());
-                    }
-                }
+            if e.rel == "cites"
+                && let Some(&f) = net.id_of.get(&e.from.to_lowercase())
+                && set.contains(&f)
+            {
+                sources.insert(e.to.to_lowercase());
             }
         }
         out.push(Community {
@@ -626,18 +624,14 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
     let archived = |i: usize| {
         vault
             .resolve_page(&g.nodes[i].id)
-            .map(|p| p.is_archived())
-            .unwrap_or(false)
+            .is_some_and(super::vault::Page::is_archived)
     };
     let is_knowledge = |i: usize| {
         SYNTHESIS.contains(&g.nodes[i].label.as_str())
-            || vault
-                .resolve_page(&g.nodes[i].id)
-                .map(|p| {
-                    !p.list("sources").is_empty()
-                        && !["source", "journal", "capture"].contains(&p.ptype.as_str())
-                })
-                .unwrap_or(false)
+            || vault.resolve_page(&g.nodes[i].id).is_some_and(|p| {
+                !p.list("sources").is_empty()
+                    && !["source", "journal", "capture"].contains(&p.ptype.as_str())
+            })
     };
     let orphans: Vec<String> = (0..net.n)
         .filter(|&i| indeg[i] == 0 && is_knowledge(i) && !archived(i))
@@ -751,12 +745,12 @@ pub fn suggest_links(
             .chain(p.aliases.iter().cloned())
         {
             let name = name.trim().to_string();
-            if name.chars().count() < 4 || !name.chars().any(|c| c.is_alphabetic()) {
+            if name.chars().count() < 4 || !name.chars().any(char::is_alphabetic) {
                 continue;
             }
             if name.contains(char::is_whitespace) {
                 multi.push((name.to_lowercase(), n.id.clone()));
-            } else if name.chars().any(|c| c.is_uppercase()) {
+            } else if name.chars().any(char::is_uppercase) {
                 single.push((name.clone(), n.id.clone()));
             }
         }
@@ -795,10 +789,11 @@ pub fn suggest_links(
         {
             continue;
         }
-        if let Some(only) = only_page {
-            if !p.stem.eq_ignore_ascii_case(only) && !p.rel.eq_ignore_ascii_case(only) {
-                continue;
-            }
+        if let Some(only) = only_page
+            && !p.stem.eq_ignore_ascii_case(only)
+            && !p.rel.eq_ignore_ascii_case(only)
+        {
+            continue;
         }
         let already: HashSet<String> = p
             .all_link_targets()
@@ -899,7 +894,7 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
         s.to_lowercase()
             .split(|c: char| !c.is_alphanumeric())
             .filter(|w| w.len() > 3)
-            .map(|w| w.to_string())
+            .map(std::string::ToString::to_string)
             .collect()
     };
     let mut out = vec![];
@@ -910,12 +905,10 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
                 f == "contradictions"
                     && vault
                         .resolve_page(t)
-                        .map(|q| q.stem.eq_ignore_ascii_case(other))
-                        .unwrap_or(false)
+                        .is_some_and(|q| q.stem.eq_ignore_ascii_case(other))
             }) || p
                 .get("superseded_by")
-                .map(|s| s.to_lowercase().contains(&other.to_lowercase()))
-                .unwrap_or(false)
+                .is_some_and(|s| s.to_lowercase().contains(&other.to_lowercase()))
         };
         if recorded(pa, &pb.stem) || recorded(pb, &pa.stem) {
             continue;

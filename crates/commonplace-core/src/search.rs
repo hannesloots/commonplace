@@ -49,15 +49,15 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
         if !opts.include_archive && p.is_archived() {
             continue;
         }
-        if let Some(s) = &opts.scope {
-            if !p.rel.starts_with(s.trim_end_matches('/')) {
-                continue;
-            }
+        if let Some(s) = &opts.scope
+            && !p.rel.starts_with(s.trim_end_matches('/'))
+        {
+            continue;
         }
-        if let Some(t) = &opts.ptype {
-            if &p.ptype != t {
-                continue;
-            }
+        if let Some(t) = &opts.ptype
+            && &p.ptype != t
+        {
+            continue;
         }
         let mut tf: HashMap<String, f64> = HashMap::new();
         for w in tokenize(&p.title) {
@@ -168,7 +168,7 @@ fn snippet(text: &str, q: &[String]) -> (String, Option<usize>) {
     for (i, line) in text.lines().enumerate() {
         let lt = crate::cite::normalise(line);
         let c = q.iter().filter(|t| lt.contains(t.as_str())).count();
-        if c > 0 && best.map(|b| c > b.1).unwrap_or(true) {
+        if c > 0 && best.is_none_or(|b| c > b.1) {
             best = Some((i + 1, c, line));
         }
     }

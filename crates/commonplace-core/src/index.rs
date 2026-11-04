@@ -22,10 +22,11 @@ fn line_for(p: &Page) -> String {
         .filter(|d| !d.trim().is_empty())
         .unwrap_or_else(|| first_sentence(&p.doc.body));
     let mut extra = vec![];
-    if let Some(s) = p.get("status") {
-        if !["mature", "growing", "seed"].contains(&s.as_str()) && !s.is_empty() {
-            extra.push(s);
-        }
+    if let Some(s) = p.get("status")
+        && !["mature", "growing", "seed"].contains(&s.as_str())
+        && !s.is_empty()
+    {
+        extra.push(s);
     }
     if p.get("confidence").as_deref() == Some("contested")
         || p.get("confidence").as_deref() == Some("low")
@@ -59,7 +60,7 @@ fn first_sentence(body: &str) -> String {
         .or_else(|| markdown::section(&masked, "Answer"))
         .or_else(|| markdown::section(&masked, "Summary"));
     let text: String = preferred
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .filter(|s| markdown::has_prose(s))
         .unwrap_or(masked.clone());
     for l in text.lines() {

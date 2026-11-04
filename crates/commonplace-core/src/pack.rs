@@ -195,9 +195,7 @@ fn substitute(v: &mut serde_yaml::Value, profile: &serde_yaml::Value) {
             if s.contains("{{jurisdiction.") {
                 *s = PLACEHOLDER_RE
                     .replace_all(s, |c: &regex::Captures| {
-                        profile_get(profile, &c[1])
-                            .map(scalar_text)
-                            .unwrap_or_else(|| c[0].to_string())
+                        profile_get(profile, &c[1]).map_or_else(|| c[0].to_string(), scalar_text)
                     })
                     .into_owned();
             }
@@ -205,17 +203,13 @@ fn substitute(v: &mut serde_yaml::Value, profile: &serde_yaml::Value) {
         serde_yaml::Value::Sequence(seq) => {
             let mut out = Vec::with_capacity(seq.len());
             for mut item in seq.drain(..) {
-                if let serde_yaml::Value::String(s) = &item {
-                    if let Some(c) = PLACEHOLDER_RE.captures(s) {
-                        if c[0].len() == s.len() {
-                            if let Some(serde_yaml::Value::Sequence(items)) =
-                                profile_get(profile, &c[1])
-                            {
-                                out.extend(items.iter().cloned());
-                                continue;
-                            }
-                        }
-                    }
+                if let serde_yaml::Value::String(s) = &item
+                    && let Some(c) = PLACEHOLDER_RE.captures(s)
+                    && c[0].len() == s.len()
+                    && let Some(serde_yaml::Value::Sequence(items)) = profile_get(profile, &c[1])
+                {
+                    out.extend(items.iter().cloned());
+                    continue;
                 }
                 substitute(&mut item, profile);
                 out.push(item);
@@ -262,9 +256,7 @@ pub fn glob_match(pattern: &str, path: &str) -> bool {
         r.push('$');
         r
     }
-    regex::Regex::new(&to_regex(pattern))
-        .map(|re| re.is_match(path))
-        .unwrap_or(false)
+    regex::Regex::new(&to_regex(pattern)).is_ok_and(|re| re.is_match(path))
 }
 
 #[cfg(test)]

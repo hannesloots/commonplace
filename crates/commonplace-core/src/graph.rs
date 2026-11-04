@@ -2,7 +2,7 @@
 //! edges come from frontmatter link fields (relation = field name), inline
 //! Dataview-style fields in the body (`enabled_by:: [[Page]]`), citations
 //! (`cites`), and plain wikilinks (`mentions`). Supports multi-hop queries and
-//! export to Cypher (Neo4j), GraphML, Mermaid, DOT and JSON.
+//! export to Cypher (Neo4j), `GraphML`, Mermaid, DOT and JSON.
 
 use crate::cite;
 use crate::markdown;
@@ -242,10 +242,10 @@ impl Graph {
         q.push_back((a.id.clone(), vec![a.id.clone()], start_seen));
         let mut best_len: Option<usize> = None;
         while let Some((id, path, visited)) = q.pop_front() {
-            if let Some(bl) = best_len {
-                if path.len() > bl {
-                    break;
-                }
+            if let Some(bl) = best_len
+                && path.len() > bl
+            {
+                break;
             }
             if path.len() > max_depth * 2 + 1 {
                 continue;
@@ -318,12 +318,10 @@ impl Graph {
                     n.id.clone(),
                     self.out
                         .get(&n.id.to_lowercase())
-                        .map(|v| v.len())
-                        .unwrap_or(0),
+                        .map_or(0, std::vec::Vec::len),
                     self.inn
                         .get(&n.id.to_lowercase())
-                        .map(|v| v.len())
-                        .unwrap_or(0),
+                        .map_or(0, std::vec::Vec::len),
                 )
             })
             .collect();
@@ -430,16 +428,10 @@ impl Graph {
     pub fn to_mermaid(&self, ids: Option<&HashSet<String>>) -> String {
         let mut s = String::from("graph LR\n");
         let key = |id: &str| -> String {
-            format!(
-                "n{}",
-                crate::fsutil::sha256_str(&id.to_lowercase())[..8].to_string()
-            )
+            format!("n{}", &crate::fsutil::sha256_str(&id.to_lowercase())[..8])
         };
         for n in &self.nodes {
-            if ids
-                .map(|set| set.contains(&n.id.to_lowercase()))
-                .unwrap_or(true)
-            {
+            if ids.is_none_or(|set| set.contains(&n.id.to_lowercase())) {
                 s.push_str(&format!(
                     "  {}[\"{}<br/><i>{}</i>\"]\n",
                     key(&n.id),
@@ -449,12 +441,9 @@ impl Graph {
             }
         }
         for e in &self.edges {
-            if ids
-                .map(|set| {
-                    set.contains(&e.from.to_lowercase()) && set.contains(&e.to.to_lowercase())
-                })
-                .unwrap_or(true)
-            {
+            if ids.is_none_or(|set| {
+                set.contains(&e.from.to_lowercase()) && set.contains(&e.to.to_lowercase())
+            }) {
                 s.push_str(&format!(
                     "  {} -->|{}| {}\n",
                     key(&e.from),

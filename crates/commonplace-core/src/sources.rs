@@ -55,7 +55,7 @@ pub fn make_id(title: &str, date: &str) -> String {
             .trim_end()
             .to_string();
     }
-    format!("{} {}", date, t)
+    format!("{date} {t}")
 }
 
 static DATE_PREFIX_RE: LazyLock<Regex> =
@@ -73,25 +73,25 @@ pub fn ingest(
     let mut warnings = vec![];
     let sha = fsutil::sha256_file(src)?;
     let mut manifest = Manifest::load(root)?;
-    if let Some((id, rec)) = manifest.find_by_hash(&sha) {
-        if !opts.force {
-            return Ok(IngestReport {
-                id: id.clone(),
-                raw: rec.raw.clone(),
-                raw_sha256: sha,
-                text: rec.text.clone(),
-                note: rec.note.clone().unwrap_or_default(),
-                converter: rec.converter.clone().unwrap_or_default(),
-                fidelity: String::new(),
-                pages: None,
-                needs_conversion: false,
-                duplicate_of: Some(id.clone()),
-                warnings: vec![
-                    "identical file already ingested; nothing done (use --force to ingest again)"
-                        .into(),
-                ],
-            });
-        }
+    if let Some((id, rec)) = manifest.find_by_hash(&sha)
+        && !opts.force
+    {
+        return Ok(IngestReport {
+            id: id.clone(),
+            raw: rec.raw.clone(),
+            raw_sha256: sha,
+            text: rec.text.clone(),
+            note: rec.note.clone().unwrap_or_default(),
+            converter: rec.converter.clone().unwrap_or_default(),
+            fidelity: String::new(),
+            pages: None,
+            needs_conversion: false,
+            duplicate_of: Some(id.clone()),
+            warnings: vec![
+                "identical file already ingested; nothing done (use --force to ingest again)"
+                    .into(),
+            ],
+        });
     }
     let ext = src
         .extension()
@@ -138,7 +138,7 @@ pub fn ingest(
         std::fs::rename(src, &raw_path).or_else(|_| {
             std::fs::copy(src, &raw_path)
                 .map(|_| ())
-                .and_then(|_| std::fs::remove_file(src))
+                .and_then(|()| std::fs::remove_file(src))
         })?;
     } else {
         std::fs::copy(src, &raw_path)
@@ -650,7 +650,10 @@ pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
     }
     for f in targets {
         let t = std::fs::read_to_string(&f)?;
-        let dir = f.parent().map(|d| d.to_path_buf()).unwrap_or_default();
+        let dir = f
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
         let is_vault_file = |href: &str| {
             let h = href.split(['?', '#']).next().unwrap_or("");
             !h.is_empty() && (dir.join(h).exists() || root.join(h.trim_start_matches('/')).exists())
@@ -719,7 +722,7 @@ pub fn page_markers_from_formfeeds(txt: &str) -> (String, usize) {
             break;
         }
         n = i + 1;
-        out.push_str(&format!("<!-- page:{} -->\n", n));
+        out.push_str(&format!("<!-- page:{n} -->\n"));
         out.push_str(page.trim_end_matches('\n'));
         out.push('\n');
     }
@@ -826,10 +829,9 @@ pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
         }
         if let Some(pf) = frontmatter::get_str(&doc.fm, "page_from")
             .or_else(|| frontmatter::get_str(&doc.fm, "pages_from"))
+            && !doc.body.contains("<!-- page:")
         {
-            if !doc.body.contains("<!-- page:") {
-                header.push_str(&format!("<!-- page:{pf} -->\n"));
-            }
+            header.push_str(&format!("<!-- page:{pf} -->\n"));
         }
         let body = if doc.has_frontmatter { doc.body } else { t };
         let header_lines = header.lines().count();

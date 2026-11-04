@@ -52,7 +52,7 @@ pub fn parse(text: &str) -> Result<Document> {
         match serde_yaml::from_str::<Value>(&yaml)? {
             Value::Mapping(m) => m,
             Value::Null => Mapping::new(),
-            other => return Err(anyhow!("frontmatter is not a mapping: {:?}", other)),
+            other => return Err(anyhow!("frontmatter is not a mapping: {other:?}")),
         }
     };
     Ok(Document {

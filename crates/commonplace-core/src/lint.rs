@@ -290,13 +290,23 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
         }
         let mut required: Vec<String> = core
             .as_ref()
-            .map(|c| c.required.iter().map(|s| s.to_string()).collect())
+            .map(|c| {
+                c.required
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect()
+            })
             .unwrap_or_default();
         let mut status_vals: Vec<String> = core
             .as_ref()
-            .map(|c| c.status.iter().map(|s| s.to_string()).collect())
+            .map(|c| {
+                c.status
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect()
+            })
             .unwrap_or_default();
-        let mut cited = core.as_ref().map(|c| c.cited).unwrap_or(false);
+        let mut cited = core.as_ref().is_some_and(|c| c.cited);
         if let Some(t) = pt {
             required.extend(t.required.iter().cloned());
             if !t.status.is_empty() {
@@ -336,25 +346,26 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                         "FM-004",
                         Some(1),
                         format!("property '{r}' is empty"),
-                    )
+                    );
                 }
                 _ => {}
             }
         }
         // enums
-        if let Some(s) = p.get("status") {
-            if !status_vals.is_empty() && !status_vals.iter().any(|v| v == &s) {
-                push(
-                    Severity::Error,
-                    "FM-005",
-                    Some(1),
-                    format!(
-                        "status '{s}' is not one of {} for type '{}'",
-                        status_vals.join("|"),
-                        p.ptype
-                    ),
-                );
-            }
+        if let Some(s) = p.get("status")
+            && !status_vals.is_empty()
+            && !status_vals.iter().any(|v| v == &s)
+        {
+            push(
+                Severity::Error,
+                "FM-005",
+                Some(1),
+                format!(
+                    "status '{s}' is not one of {} for type '{}'",
+                    status_vals.join("|"),
+                    p.ptype
+                ),
+            );
         }
         for (field, vals) in [
             ("confidence", CONFIDENCE),
@@ -362,8 +373,24 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
             ("authority", AUTHORITY),
             ("fidelity", FIDELITY),
         ] {
-            if let Some(v) = p.get(field) {
-                if !v.is_empty() && !vals.contains(&v.as_str()) {
+            if let Some(v) = p.get(field)
+                && !v.is_empty()
+                && !vals.contains(&v.as_str())
+            {
+                push(
+                    Severity::Error,
+                    "FM-005",
+                    Some(1),
+                    format!("{field} '{v}' is not one of {}", vals.join("|")),
+                );
+            }
+        }
+        if let Some(t) = pt {
+            for (field, vals) in &t.enums {
+                if let Some(v) = p.get(field)
+                    && !v.is_empty()
+                    && !vals.iter().any(|x| x == &v)
+                {
                     push(
                         Severity::Error,
                         "FM-005",
@@ -372,27 +399,12 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                     );
                 }
             }
-        }
-        if let Some(t) = pt {
-            for (field, vals) in &t.enums {
-                if let Some(v) = p.get(field) {
-                    if !v.is_empty() && !vals.iter().any(|x| x == &v) {
-                        push(
-                            Severity::Error,
-                            "FM-005",
-                            Some(1),
-                            format!("{field} '{v}' is not one of {}", vals.join("|")),
-                        );
-                    }
-                }
-            }
             for (field, spec) in &t.links {
                 let targets = p.list(field);
                 let sev = spec
                     .severity
                     .as_deref()
-                    .map(Severity::parse)
-                    .unwrap_or(Severity::Error);
+                    .map_or(Severity::Error, Severity::parse);
                 if targets.len() < spec.min {
                     push(
                         sev.clone(),
@@ -415,19 +427,20 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                 }
                 for tgt in targets {
                     for t in markdown::wikilink_targets_in(&tgt) {
-                        if let Some(tp) = vault.resolve_page(&t) {
-                            if !spec.to.is_empty() && !spec.to.iter().any(|x| x == &tp.ptype) {
-                                push(
-                                    Severity::Warning,
-                                    "LINK-004",
-                                    Some(1),
-                                    format!(
-                                        "'{field}' links to [[{t}]] of type '{}', expected {}",
-                                        tp.ptype,
-                                        spec.to.join("|")
-                                    ),
-                                );
-                            }
+                        if let Some(tp) = vault.resolve_page(&t)
+                            && !spec.to.is_empty()
+                            && !spec.to.iter().any(|x| x == &tp.ptype)
+                        {
+                            push(
+                                Severity::Warning,
+                                "LINK-004",
+                                Some(1),
+                                format!(
+                                    "'{field}' links to [[{t}]] of type '{}', expected {}",
+                                    tp.ptype,
+                                    spec.to.join("|")
+                                ),
+                            );
                         }
                     }
                 }
@@ -435,26 +448,27 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
         }
         // dates
         for d in ["created", "updated", "date", "published", "retrieved"] {
-            if let Some(v) = p.get(d) {
-                if !v.is_empty() && !DATE_RE.is_match(&v) {
-                    push(
-                        Severity::Warning,
-                        "DATE-001",
-                        Some(1),
-                        format!("'{d}: {v}' is not an ISO date (YYYY-MM-DD)"),
-                    );
-                }
-            }
-        }
-        if let (Some(c), Some(u)) = (p.get("created"), p.get("updated")) {
-            if u < c {
+            if let Some(v) = p.get(d)
+                && !v.is_empty()
+                && !DATE_RE.is_match(&v)
+            {
                 push(
                     Severity::Warning,
-                    "DATE-002",
+                    "DATE-001",
                     Some(1),
-                    "updated is earlier than created".into(),
+                    format!("'{d}: {v}' is not an ISO date (YYYY-MM-DD)"),
                 );
             }
+        }
+        if let (Some(c), Some(u)) = (p.get("created"), p.get("updated"))
+            && u < c
+        {
+            push(
+                Severity::Warning,
+                "DATE-002",
+                Some(1),
+                "updated is earlier than created".into(),
+            );
         }
         // tags
         let mut topic_count = 0;
@@ -468,15 +482,15 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                         "tag '{t}' has the wrong format (lowercase kebab, optional one namespace: topic/name)"
                     ),
                 );
-            } else if let Some(reg) = &tags {
-                if !reg.contains(t) {
-                    push(
-                        Severity::Error,
-                        "TAG-002",
-                        Some(1),
-                        format!("tag '{t}' is not registered in TAGS.md (propose it there first)"),
-                    );
-                }
+            } else if let Some(reg) = &tags
+                && !reg.contains(t)
+            {
+                push(
+                    Severity::Error,
+                    "TAG-002",
+                    Some(1),
+                    format!("tag '{t}' is not registered in TAGS.md (propose it there first)"),
+                );
             }
             if t.starts_with("topic/") {
                 topic_count += 1;
@@ -541,19 +555,18 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
         if SYNTHESIS_TYPES.contains(&p.ptype.as_str())
             || p.ptype == "topic"
             || p.ptype == "person"
-            || pt.map(|t| t.cited).unwrap_or(false)
+            || pt.is_some_and(|t| t.cited)
         {
             let inbound = backlinks
                 .get(&i)
-                .map(|v| v.iter().filter(|j| !hubs.contains(j)).count())
-                .unwrap_or(0);
+                .map_or(0, |v| v.iter().filter(|j| !hubs.contains(j)).count());
             if inbound == 0 && !p.is_archived() {
                 push(Severity::Warning, "LINK-003", None, "orphan: no inbound links from content pages (link it from a topic, project or related page)".into());
             }
         }
         // supersession and contradictions
         if p.get("status").as_deref() == Some("superseded")
-            && p.get("superseded_by").map(|s| s.is_empty()).unwrap_or(true)
+            && p.get("superseded_by").is_none_or(|s| s.is_empty())
         {
             push(
                 Severity::Warning,
@@ -652,71 +665,66 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                 "stub: headings only, no content".into(),
             );
         }
-        if let Some(u) = p.get("updated") {
-            if vault.config.lint.stale_days > 0
-                && cited
-                && p.get("status").as_deref() == Some("mature")
-            {
-                if let (Ok(ud), Ok(td)) = (
-                    chrono::NaiveDate::parse_from_str(&u[..u.len().min(10)], "%Y-%m-%d"),
-                    chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d"),
-                ) {
-                    let age = (td - ud).num_days();
-                    if age > vault.config.lint.stale_days as i64 {
-                        push(
-                            Severity::Info,
-                            "STALE-001",
-                            Some(1),
-                            format!(
-                                "not updated for {age} days; re-check against newer sources or confirm `updated`"
-                            ),
-                        );
-                    }
-                    if age > 90 && CURRENT_RE.is_match(&masked) {
-                        push(
-                            Severity::Warning,
-                            "STALE-002",
-                            Some(1),
-                            format!("says 'currently/latest' but was last updated {age} days ago"),
-                        );
-                    }
-                }
+        if let Some(u) = p.get("updated")
+            && vault.config.lint.stale_days > 0
+            && cited
+            && p.get("status").as_deref() == Some("mature")
+            && let (Ok(ud), Ok(td)) = (
+                chrono::NaiveDate::parse_from_str(&u[..u.len().min(10)], "%Y-%m-%d"),
+                chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d"),
+            )
+        {
+            let age = (td - ud).num_days();
+            if age > i64::from(vault.config.lint.stale_days) {
+                push(
+                    Severity::Info,
+                    "STALE-001",
+                    Some(1),
+                    format!(
+                        "not updated for {age} days; re-check against newer sources or confirm `updated`"
+                    ),
+                );
+            }
+            if age > 90 && CURRENT_RE.is_match(&masked) {
+                push(
+                    Severity::Warning,
+                    "STALE-002",
+                    Some(1),
+                    format!("says 'currently/latest' but was last updated {age} days ago"),
+                );
             }
         }
         if p.ptype == "project"
             && p.get("status").as_deref() == Some("active")
             && p.list("next_actions").is_empty()
-            && markdown::section(body, "Next actions")
-                .map(|s| !markdown::has_prose(s))
-                .unwrap_or(true)
+            && markdown::section(body, "Next actions").is_none_or(|s| !markdown::has_prose(s))
         {
             push(Severity::Info, "PROJ-001", Some(1), "active project without next actions (GTD: every live project has a next action, or park it)".into());
         }
         // sources and citations
         if p.ptype == "source" {
-            if let Some(raw) = p.get("raw") {
-                if !raw.is_empty() && !vault.root.join(&raw).exists() {
-                    push(
-                        Severity::Error,
-                        "SRC-001",
-                        Some(1),
-                        format!("raw original '{raw}' is missing"),
-                    );
-                }
+            if let Some(raw) = p.get("raw")
+                && !raw.is_empty()
+                && !vault.root.join(&raw).exists()
+            {
+                push(
+                    Severity::Error,
+                    "SRC-001",
+                    Some(1),
+                    format!("raw original '{raw}' is missing"),
+                );
             }
             let st = p.get("status").unwrap_or_default();
-            if st != "registered" {
-                if sources::text_layer_path(&vault.root, &p.stem).is_none() {
-                    push(
-                        Severity::Error,
-                        "SRC-002",
-                        Some(1),
-                        format!(
-                            "no text layer for this source (expected sources/text/{}.text.md or a folder); status '{st}' claims one",
-                            p.stem
-                        ),
-                    );
-                }
+            if st != "registered" && sources::text_layer_path(&vault.root, &p.stem).is_none() {
+                push(
+                    Severity::Error,
+                    "SRC-002",
+                    Some(1),
+                    format!(
+                        "no text layer for this source (expected sources/text/{}.text.md or a folder); status '{st}' claims one",
+                        p.stem
+                    ),
+                );
             }
             if st == "registered" || st == "converted" {
                 push(Severity::Info, "SRC-004", Some(1), "source not yet summarised (write TL;DR, summary and key quotes, then set status: summarised)".into());
@@ -755,10 +763,7 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                 && p.get("status").as_deref() != Some("superseded")
             {
                 let honest = masked.contains("unsourced:")
-                    && matches!(
-                        p.get("confidence").as_deref(),
-                        Some("low") | Some("contested")
-                    );
+                    && matches!(p.get("confidence").as_deref(), Some("low" | "contested"));
                 if honest {
                     push(Severity::Info, "CITE-012", None, "unsourced page (marked honestly); ingest a source and cite when one exists".into());
                 } else {
@@ -915,20 +920,20 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
         // pack rules
         for pk in packs {
             for r in &pk.rules {
-                if let Some(t) = &r.when.ptype {
-                    if t != &p.ptype {
-                        continue;
-                    }
+                if let Some(t) = &r.when.ptype
+                    && t != &p.ptype
+                {
+                    continue;
                 }
-                if let Some(g) = &r.when.folder {
-                    if !pack::glob_match(g, &p.rel) {
-                        continue;
-                    }
+                if let Some(g) = &r.when.folder
+                    && !pack::glob_match(g, &p.rel)
+                {
+                    continue;
                 }
-                if let Some(s) = p.get("status") {
-                    if r.when.status_not.contains(&s) {
-                        continue;
-                    }
+                if let Some(s) = p.get("status")
+                    && r.when.status_not.contains(&s)
+                {
+                    continue;
                 }
                 let sev = Severity::parse(&r.severity);
                 let msg = |extra: &str| {
@@ -948,9 +953,7 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                             .chain(std::iter::once(&r.field))
                             .filter(|s| !s.is_empty())
                         {
-                            if p.get(fld).map(|v| v.is_empty()).unwrap_or(true)
-                                && p.list(fld).is_empty()
-                            {
+                            if p.get(fld).is_none_or(|v| v.is_empty()) && p.list(fld).is_empty() {
                                 push(
                                     sev.clone(),
                                     &r.id,
@@ -961,19 +964,16 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                         }
                     }
                     "enum" => {
-                        if let Some(v) = p.get(&r.field) {
-                            if !v.is_empty() && !r.values.iter().any(|x| x == &v) {
-                                push(
-                                    sev.clone(),
-                                    &r.id,
-                                    Some(1),
-                                    msg(&format!(
-                                        "{} '{v}' not in {}",
-                                        r.field,
-                                        r.values.join("|")
-                                    )),
-                                );
-                            }
+                        if let Some(v) = p.get(&r.field)
+                            && !v.is_empty()
+                            && !r.values.iter().any(|x| x == &v)
+                        {
+                            push(
+                                sev.clone(),
+                                &r.id,
+                                Some(1),
+                                msg(&format!("{} '{v}' not in {}", r.field, r.values.join("|"))),
+                            );
                         }
                     }
                     "link_field" => {
@@ -995,18 +995,19 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                             .iter()
                             .flat_map(|t| markdown::wikilink_targets_in(t))
                         {
-                            if let Some(tp) = vault.resolve_page(&t) {
-                                if !r.to.is_empty() && !r.to.iter().any(|x| x == &tp.ptype) {
-                                    push(
-                                        Severity::Warning,
-                                        &r.id,
-                                        Some(1),
-                                        msg(&format!(
-                                            "'{}' links to [[{t}]] of type '{}'",
-                                            r.field, tp.ptype
-                                        )),
-                                    );
-                                }
+                            if let Some(tp) = vault.resolve_page(&t)
+                                && !r.to.is_empty()
+                                && !r.to.iter().any(|x| x == &tp.ptype)
+                            {
+                                push(
+                                    Severity::Warning,
+                                    &r.id,
+                                    Some(1),
+                                    msg(&format!(
+                                        "'{}' links to [[{t}]] of type '{}'",
+                                        r.field, tp.ptype
+                                    )),
+                                );
                             }
                         }
                     }
@@ -1034,22 +1035,22 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                         }
                     }
                     "forbid_regex" => {
-                        if let Ok(re) = Regex::new(&r.pattern) {
-                            if let Some(m) = re.find(&masked) {
-                                push(
-                                    sev.clone(),
-                                    &r.id,
-                                    bl(masked[..m.start()].matches('\n').count() + 1),
-                                    msg(&format!("matched '{}'", m.as_str())),
-                                );
-                            }
+                        if let Ok(re) = Regex::new(&r.pattern)
+                            && let Some(m) = re.find(&masked)
+                        {
+                            push(
+                                sev.clone(),
+                                &r.id,
+                                bl(masked[..m.start()].matches('\n').count() + 1),
+                                msg(&format!("matched '{}'", m.as_str())),
+                            );
                         }
                     }
                     "require_regex" => {
-                        if let Ok(re) = Regex::new(&r.pattern) {
-                            if !re.is_match(&masked) {
-                                push(sev.clone(), &r.id, None, msg(""));
-                            }
+                        if let Ok(re) = Regex::new(&r.pattern)
+                            && !re.is_match(&masked)
+                        {
+                            push(sev.clone(), &r.id, None, msg(""));
                         }
                     }
                     "body_regex_requires_page" => {
@@ -1102,19 +1103,19 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                     "stale_year" => {
                         if let Some(v) = p.get(&r.field) {
                             let year: i32 = today[..4].parse().unwrap_or(0);
-                            if let Ok(y) = v.trim().parse::<i32>() {
-                                if y < year - r.years_back as i32 {
-                                    push(
-                                        sev.clone(),
-                                        &r.id,
-                                        Some(1),
-                                        msg(&format!(
-                                            "{}={y} is older than {}",
-                                            r.field,
-                                            year - r.years_back as i32
-                                        )),
-                                    );
-                                }
+                            if let Ok(y) = v.trim().parse::<i32>()
+                                && y < year - r.years_back as i32
+                            {
+                                push(
+                                    sev.clone(),
+                                    &r.id,
+                                    Some(1),
+                                    msg(&format!(
+                                        "{}={y} is older than {}",
+                                        r.field,
+                                        year - r.years_back as i32
+                                    )),
+                                );
                             }
                         }
                     }
@@ -1140,8 +1141,7 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
                 && !path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .map(|n| n.starts_with('.'))
-                    .unwrap_or(false)
+                    .is_some_and(|n| n.starts_with('.'))
             {
                 let rel = crate::fsutil::rel(&vault.root, &path);
                 if !registered.contains(&rel) {
@@ -1174,17 +1174,16 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
             .filter(|p| p.rel != "index.md" && !p.rel.starts_with("indexes/"))
             .filter_map(|p| p.mtime)
             .max();
-        if let (Some(n), Some(im)) = (newest, idx.mtime) {
-            if n > im {
-                f.push(Finding {
-                    severity: Severity::Info,
-                    rule: "IDX-001".into(),
-                    path: "index.md".into(),
-                    line: None,
-                    message: "index.md is older than the newest page; run `commonplace index`"
-                        .into(),
-                });
-            }
+        if let (Some(n), Some(im)) = (newest, idx.mtime)
+            && n > im
+        {
+            f.push(Finding {
+                severity: Severity::Info,
+                rule: "IDX-001".into(),
+                path: "index.md".into(),
+                line: None,
+                message: "index.md is older than the newest page; run `commonplace index`".into(),
+            });
         }
     } else {
         f.push(Finding {
@@ -1247,11 +1246,11 @@ pub fn verify_all_citations(
     let mut out = vec![];
     let known: HashSet<String> = sources::known_source_ids(&vault.root).into_iter().collect();
     for p in &vault.pages {
-        if let Some(o) = only {
-            if !o.contains(&p.rel) && !o.iter().any(|x| p.rel.starts_with(x.trim_end_matches('/')))
-            {
-                continue;
-            }
+        if let Some(o) = only
+            && !o.contains(&p.rel)
+            && !o.iter().any(|x| p.rel.starts_with(x.trim_end_matches('/')))
+        {
+            continue;
         }
         let (cites, _) = cite::parse_citations(&p.doc.body);
         for c in cites {
@@ -1272,27 +1271,24 @@ pub fn verify_all_citations(
                 out.push(res);
                 continue;
             }
-            match sources::load_text_layer(&vault.root, &c.source) {
-                Ok(Some(tl)) => {
-                    let (v, found, near, msg) = cite::verify_quote(
-                        &tl.text,
-                        &c,
-                        vault.config.lint.quote_min_words,
-                        vault.config.lint.quote_max_words,
-                    );
-                    res.verdict = v;
-                    res.found_line = found;
-                    res.nearest_lines = near;
-                    res.message = if let Some(l) = found {
-                        format!("{msg} [{}]", tl.locate(l))
-                    } else {
-                        msg
-                    };
-                }
-                _ => {
-                    res.verdict = Verdict::TextLayerMissing;
-                    res.message = "source has no text layer".into();
-                }
+            if let Ok(Some(tl)) = sources::load_text_layer(&vault.root, &c.source) {
+                let (v, found, near, msg) = cite::verify_quote(
+                    &tl.text,
+                    &c,
+                    vault.config.lint.quote_min_words,
+                    vault.config.lint.quote_max_words,
+                );
+                res.verdict = v;
+                res.found_line = found;
+                res.nearest_lines = near;
+                res.message = if let Some(l) = found {
+                    format!("{msg} [{}]", tl.locate(l))
+                } else {
+                    msg
+                };
+            } else {
+                res.verdict = Verdict::TextLayerMissing;
+                res.message = "source has no text layer".into();
             }
             out.push(res);
         }

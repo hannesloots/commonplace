@@ -48,7 +48,7 @@ pub fn rel(root: &Path, path: &Path) -> String {
 /// Lowercase kebab-case slug, ASCII only, trimmed to `max` chars.
 pub fn slug(s: &str, max: usize) -> String {
     use unicode_normalization::UnicodeNormalization;
-    let folded: String = s.nfkd().filter(|c| c.is_ascii()).collect();
+    let folded: String = s.nfkd().filter(char::is_ascii).collect();
     let mut out = String::new();
     let mut last_dash = true;
     for c in folded.chars() {
@@ -93,8 +93,7 @@ pub fn now_iso() -> String {
 pub fn is_markdown(p: &Path) -> bool {
     p.extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case("md"))
-        .unwrap_or(false)
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"))
 }
 
 pub fn stem(p: &Path) -> String {

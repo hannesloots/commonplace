@@ -138,7 +138,7 @@ enum Cmd {
         #[arg(long, default_value_t = 15)]
         limit: usize,
     },
-    /// Frontmatter query, e.g. --where "type=capability and target_maturity>baseline_maturity"
+    /// Frontmatter query, e.g. --where "type=capability and `target_maturity>baseline_maturity`"
     Query {
         #[arg(long = "where")]
         r#where: String,
@@ -214,7 +214,7 @@ enum GraphCmd {
         page: String,
         #[arg(long, default_value_t = 2)]
         depth: usize,
-        /// Only follow these relations (comma-separated), e.g. enabled_by,realised_by
+        /// Only follow these relations (comma-separated), e.g. `enabled_by,realised_by`
         #[arg(long, value_delimiter = ',')]
         rel: Vec<String>,
         /// out | in | both
@@ -247,7 +247,7 @@ enum GraphCmd {
         #[arg(long)]
         typed_only: bool,
     },
-    /// Most central pages (PageRank, degree, betweenness)
+    /// Most central pages (`PageRank`, degree, betweenness)
     Hubs {
         #[arg(long, default_value_t = 20)]
         limit: usize,
@@ -513,7 +513,7 @@ fn run(cli: Cli) -> Result<i32> {
                 "arch": std::env::consts::ARCH,
                 "root": root.as_ref().map(|r| r.display().to_string()),
                 "git": git,
-                "git_repo": root.as_ref().map(|r| r.join(".git").exists()).unwrap_or(false),
+                "git_repo": root.as_ref().is_some_and(|r| r.join(".git").exists()),
                 "converters": conv,
                 "skill_dir": skill_dir().map(|p| p.display().to_string()),
                 "packs_enabled": root.as_ref().and_then(|r| config::Config::load(r).ok()).map(|c| c.packs).unwrap_or_default(),
@@ -548,8 +548,7 @@ fn run(cli: Cli) -> Result<i32> {
                     "converters: {}",
                     if info["converters"]
                         .as_array()
-                        .map(|a| a.is_empty())
-                        .unwrap_or(true)
+                        .is_none_or(std::vec::Vec::is_empty)
                     {
                         "none (PDF/DOCX will need manual conversion)".to_string()
                     } else {
@@ -568,8 +567,7 @@ fn run(cli: Cli) -> Result<i32> {
                 );
                 if info["packs_enabled"]
                     .as_array()
-                    .map(|a| a.iter().any(|p| p == "legal"))
-                    .unwrap_or(false)
+                    .is_some_and(|a| a.iter().any(|p| p == "legal"))
                 {
                     let j = info["jurisdiction"].as_str().unwrap_or("");
                     println!(
@@ -817,7 +815,7 @@ fn run(cli: Cli) -> Result<i32> {
                                     anyhow!("locator '{loc}' not found in the text layer")
                                 })?;
                                 for (ln, line) in sp {
-                                    println!("{:>5} | {}", ln, line);
+                                    println!("{ln:>5} | {line}");
                                 }
                             }
                             None => print!("{}", tl.text),
@@ -867,7 +865,11 @@ fn run(cli: Cli) -> Result<i32> {
             let v = open(&cli.root)?;
             let packs = load_packs(&v)?;
             let only = paths_set(&paths, changed, &v.root)?;
-            if changed && only.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
+            if changed
+                && only
+                    .as_ref()
+                    .is_some_and(std::collections::HashSet::is_empty)
+            {
                 if json {
                     print_json(&lint::LintReport::default());
                 } else {
@@ -906,7 +908,7 @@ fn run(cli: Cli) -> Result<i32> {
                 "warning" | "warn" => rep.errors + rep.warnings > 0,
                 _ => rep.errors > 0,
             };
-            Ok(if fail { 1 } else { 0 })
+            Ok(i32::from(fail))
         }
         Cmd::Cite { cmd } => {
             let v = open(&cli.root)?;
@@ -943,7 +945,7 @@ fn run(cli: Cli) -> Result<i32> {
                         }
                         println!("{} citations, {} failed", res.len(), fails);
                     }
-                    Ok(if fails > 0 { 1 } else { 0 })
+                    Ok(i32::from(fails > 0))
                 }
                 CiteCmd::Find { source, quote } => {
                     let tl = sources::load_text_layer(&v.root, &source)?
@@ -955,71 +957,65 @@ fn run(cli: Cli) -> Result<i32> {
                         .map(|(i, l)| (i + 1, l))
                         .collect();
                     let hay = cite::Haystack::new(&lines);
-                    match hay.verify(&quote) {
-                        Some(l) => {
-                            // derive page / para context
-                            let mut page = None;
-                            let mut para = None;
-                            for (ln, line) in &lines {
-                                if *ln > l {
-                                    break;
-                                }
-                                if let Some(c) = regex::Regex::new(r"<!--\s*page:\s*(\d+)\s*-->")
-                                    .unwrap()
-                                    .captures(line)
-                                {
-                                    page = Some(c[1].to_string());
-                                }
-                                if let Some(c) = regex::Regex::new(
-                                    r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)",
-                                )
+                    if let Some(l) = hay.verify(&quote) {
+                        // derive page / para context
+                        let mut page = None;
+                        let mut para = None;
+                        for (ln, line) in &lines {
+                            if *ln > l {
+                                break;
+                            }
+                            if let Some(c) = regex::Regex::new(r"<!--\s*page:\s*(\d+)\s*-->")
                                 .unwrap()
                                 .captures(line)
-                                {
-                                    para = c.get(1).or(c.get(2)).map(|m| m.as_str().to_string());
-                                }
+                            {
+                                page = Some(c[1].to_string());
                             }
-                            let loc = if let Some(p) = &para {
-                                format!("para {p}")
-                            } else if let Some(p) = &page {
-                                format!("p.{p}")
-                            } else {
+                            if let Some(c) =
+                                regex::Regex::new(r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)")
+                                    .unwrap()
+                                    .captures(line)
+                            {
+                                para = c.get(1).or(c.get(2)).map(|m| m.as_str().to_string());
+                            }
+                        }
+                        let loc = if let Some(p) = &para {
+                            format!("para {p}")
+                        } else if let Some(p) = &page {
+                            format!("p.{p}")
+                        } else {
+                            tl.locate(l)
+                        };
+                        if json {
+                            print_json(
+                                &serde_json::json!({"found": true, "line": l, "where": tl.locate(l), "page": page, "para": para, "locator": loc}),
+                            );
+                        } else {
+                            println!(
+                                "found at {} → use locator: {loc}\n[^n]: [[{source}]] {loc} \"{quote}\"",
                                 tl.locate(l)
-                            };
-                            if json {
-                                print_json(
-                                    &serde_json::json!({"found": true, "line": l, "where": tl.locate(l), "page": page, "para": para, "locator": loc}),
-                                );
-                            } else {
-                                println!(
-                                    "found at {} → use locator: {loc}\n[^n]: [[{source}]] {loc} \"{quote}\"",
-                                    tl.locate(l)
-                                );
-                            }
-                            Ok(0)
+                            );
                         }
-                        None => {
-                            let near = hay.nearest_lines(&quote, 5);
-                            if json {
-                                print_json(
-                                    &serde_json::json!({"found": false, "nearest_lines": near}),
-                                );
-                            } else {
-                                println!(
-                                    "not found verbatim. Nearest lines: {}",
-                                    near.iter()
-                                        .map(|l| format!("L{l}"))
-                                        .collect::<Vec<_>>()
-                                        .join(", ")
-                                );
-                                for l in near.iter().take(3) {
-                                    if let Some((_, line)) = lines.get(l - 1) {
-                                        println!("  L{l}: {}", line.trim());
-                                    }
+                        Ok(0)
+                    } else {
+                        let near = hay.nearest_lines(&quote, 5);
+                        if json {
+                            print_json(&serde_json::json!({"found": false, "nearest_lines": near}));
+                        } else {
+                            println!(
+                                "not found verbatim. Nearest lines: {}",
+                                near.iter()
+                                    .map(|l| format!("L{l}"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
+                            for l in near.iter().take(3) {
+                                if let Some((_, line)) = lines.get(l - 1) {
+                                    println!("  L{l}: {}", line.trim());
                                 }
                             }
-                            Ok(1)
                         }
+                        Ok(1)
                     }
                 }
             }
@@ -1054,7 +1050,7 @@ fn run(cli: Cli) -> Result<i32> {
                         }
                         println!("{} broken links", issues.len());
                     }
-                    Ok(if issues.is_empty() { 0 } else { 1 })
+                    Ok(i32::from(!issues.is_empty()))
                 }
                 LinksCmd::Backlinks { page } => {
                     let b = ops::backlinks_of(&v, &page)?;
@@ -1164,8 +1160,7 @@ fn run(cli: Cli) -> Result<i32> {
                     (include_archive || !p.is_archived())
                         && scope
                             .as_ref()
-                            .map(|s| p.rel.starts_with(s.trim_end_matches('/')))
-                            .unwrap_or(true)
+                            .is_none_or(|s| p.rel.starts_with(s.trim_end_matches('/')))
                         && commonplace_core::query::eval(&expr, p)
                 })
                 .collect();
@@ -1277,7 +1272,7 @@ fn run(cli: Cli) -> Result<i32> {
                             rep.pages_updated.len()
                         );
                     }
-                    Ok(if rep.blockers > 0 { 1 } else { 0 })
+                    Ok(i32::from(rep.blockers > 0))
                 }
             }
         }
@@ -1550,7 +1545,7 @@ fn run(cli: Cli) -> Result<i32> {
                             );
                         }
                     }
-                    Ok(if paths.is_empty() { 1 } else { 0 })
+                    Ok(i32::from(paths.is_empty()))
                 }
                 GraphCmd::Related {
                     page,

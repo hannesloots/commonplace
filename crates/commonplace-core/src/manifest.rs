@@ -43,7 +43,7 @@ impl Manifest {
             return Ok(Self::default());
         }
         let s = std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
-        Ok(serde_json::from_str(&s).with_context(|| format!("parsing {}", p.display()))?)
+        serde_json::from_str(&s).with_context(|| format!("parsing {}", p.display()))
     }
     pub fn save(&self, root: &Path) -> Result<()> {
         let s = serde_json::to_string_pretty(self)?;

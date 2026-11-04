@@ -8,6 +8,9 @@
   stdout, so an agent can branch on the code. A missing page suggests the
   closest titles. Command-line usage errors with `--json` use code `usage`.
   The codes are listed in `references/cli.md`.
+- `graph walk` / `graph path`: `--direction` accepts only `out`, `in` or
+  `both`; anything else is a `usage` error. Before, a typo silently meant
+  `both`.
 - `query --help` showed its field-comparison example in backticks
   (`` `target_maturity>baseline_maturity` ``); typed as shown, the query
   silently matched nothing. The help no longer shows backticks, and the

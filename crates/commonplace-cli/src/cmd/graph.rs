@@ -84,7 +84,7 @@ fn walk(ctx: &Ctx, v: &Vault, a: &WalkArgs) -> Result<i32> {
     if g.node(&a.page).is_none() {
         return Err(v.page_not_found(&a.page).into());
     }
-    let rows = g.walk(&a.page, a.depth, &a.rel, &a.direction);
+    let rows = g.walk(&a.page, a.depth, &a.rel, a.direction.into());
     if ctx.json {
         print_json(&rows)?;
         return Ok(0);
@@ -114,7 +114,14 @@ fn path(ctx: &Ctx, v: &Vault, a: &PathArgs) -> Result<i32> {
             return Err(v.page_not_found(p).into());
         }
     }
-    let paths = g.paths(&a.from, &a.to, a.max_depth, &a.rel, &a.direction, a.limit);
+    let paths = g.paths(
+        &a.from,
+        &a.to,
+        a.max_depth,
+        &a.rel,
+        a.direction.into(),
+        a.limit,
+    );
     if ctx.json {
         print_json(&paths)?;
         return Ok(i32::from(paths.is_empty()));
@@ -336,7 +343,7 @@ fn export(ctx: &Ctx, v: &Vault, a: GraphExportArgs) -> Result<i32> {
         "mermaid" => {
             let ids = a.around.as_ref().map(|around| {
                 let mut set: HashSet<String> = g
-                    .walk(around, a.depth, &[], "both")
+                    .walk(around, a.depth, &[], graph::Direction::Both)
                     .into_iter()
                     .map(|r| r.node.to_lowercase())
                     .collect();

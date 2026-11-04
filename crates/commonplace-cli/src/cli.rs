@@ -1,6 +1,6 @@
 //! The command-line interface definition.
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 /// Default `dedupe --threshold`: the title similarity above which two pages
@@ -291,9 +291,9 @@ pub(crate) struct WalkArgs {
     /// Only follow these relations (comma-separated), e.g. `enabled_by,realised_by`
     #[arg(long, value_delimiter = ',')]
     pub(crate) rel: Vec<String>,
-    /// out | in | both
-    #[arg(long, default_value = "both")]
-    pub(crate) direction: String,
+    /// Follow links out of each page, into it, or both
+    #[arg(long, value_enum, default_value_t = DirectionArg::Both)]
+    pub(crate) direction: DirectionArg,
     #[arg(long)]
     pub(crate) mentions: bool,
 }
@@ -306,8 +306,9 @@ pub(crate) struct PathArgs {
     pub(crate) max_depth: usize,
     #[arg(long, value_delimiter = ',')]
     pub(crate) rel: Vec<String>,
-    #[arg(long, default_value = "both")]
-    pub(crate) direction: String,
+    /// Follow links out of each page, into it, or both
+    #[arg(long, value_enum, default_value_t = DirectionArg::Both)]
+    pub(crate) direction: DirectionArg,
     #[arg(long, default_value_t = 5)]
     pub(crate) limit: usize,
     #[arg(long)]
@@ -434,4 +435,22 @@ pub(crate) enum PackCmd {
         #[arg(long)]
         jurisdiction: Option<String>,
     },
+}
+
+/// `--direction` for `graph walk` and `graph path`.
+#[derive(Clone, Copy, ValueEnum)]
+pub(crate) enum DirectionArg {
+    Out,
+    In,
+    Both,
+}
+
+impl From<DirectionArg> for commonplace_core::graph::Direction {
+    fn from(d: DirectionArg) -> Self {
+        match d {
+            DirectionArg::Out => Self::Out,
+            DirectionArg::In => Self::In,
+            DirectionArg::Both => Self::Both,
+        }
+    }
 }

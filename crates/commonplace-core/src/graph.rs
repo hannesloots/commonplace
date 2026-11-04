@@ -18,6 +18,17 @@ use std::sync::LazyLock;
 static INLINE_FIELD_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"(?m)^\s*(?:[-*]\s*)?([A-Za-z][A-Za-z0-9_\-]*)::\s*(.+)$"));
 
+/// Which links a walk or path search follows from each page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    /// Links the page makes (its frontmatter relations and body links).
+    Out,
+    /// Links other pages make to it.
+    In,
+    /// Both, ignoring direction.
+    Both,
+}
+
 /// A page as a graph node.
 #[derive(Debug, Clone, Serialize)]
 pub struct Node {
@@ -180,10 +191,10 @@ impl Graph {
         self.index.get(&id.to_lowercase()).map(|&i| &self.nodes[i])
     }
 
-    fn neighbours(&self, id: &str, rels: &[String], direction: &str) -> Vec<(&Edge, String)> {
+    fn neighbours(&self, id: &str, rels: &[String], direction: Direction) -> Vec<(&Edge, String)> {
         let mut v = vec![];
         let key = id.to_lowercase();
-        if direction != "in" {
+        if direction != Direction::In {
             for &i in self.out.get(&key).into_iter().flatten() {
                 let e = &self.edges[i];
                 if rels.is_empty() || rels.iter().any(|r| r == &e.rel) {
@@ -191,7 +202,7 @@ impl Graph {
                 }
             }
         }
-        if direction != "out" {
+        if direction != Direction::Out {
             for &i in self.inn.get(&key).into_iter().flatten() {
                 let e = &self.edges[i];
                 if rels.is_empty() || rels.iter().any(|r| r == &e.rel) {
@@ -202,13 +213,13 @@ impl Graph {
         v
     }
 
-    /// Breadth-first neighbourhood up to `depth` hops.
+    /// Breadth-first neighbourhood up to `depth` hops, following links in `direction`.
     pub fn walk(
         &self,
         start: &str,
         depth: usize,
         rels: &[String],
-        direction: &str,
+        direction: Direction,
     ) -> Vec<WalkRow> {
         let Some(s) = self.node(start) else {
             return vec![];
@@ -253,7 +264,7 @@ impl Graph {
         to: &str,
         max_depth: usize,
         rels: &[String],
-        direction: &str,
+        direction: Direction,
         limit: usize,
     ) -> Vec<Vec<String>> {
         let (Some(start), Some(goal)) = (self.node(from), self.node(to)) else {
@@ -378,7 +389,7 @@ impl Graph {
                     continue;
                 }
                 comp.insert(k, ncomp);
-                for (_, other) in self.neighbours(&id, &[], "both") {
+                for (_, other) in self.neighbours(&id, &[], Direction::Both) {
                     stack.push(other);
                 }
             }

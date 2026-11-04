@@ -149,6 +149,41 @@ fn pinned_clock_dates_new_pages_and_log_entries() {
 }
 
 #[test]
+fn walk_direction_selects_outgoing_or_incoming_links() {
+    let root = demo_vault();
+    let nodes = |direction: &str| -> Vec<String> {
+        let rows = run_json(
+            &root,
+            &[
+                "graph",
+                "walk",
+                "Customer Onboarding",
+                "--depth",
+                "1",
+                "--direction",
+                direction,
+            ],
+            0,
+        );
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|r| r["node"].as_str().map(String::from))
+            .collect()
+    };
+    let (out, inn, both) = (nodes("out"), nodes("in"), nodes("both"));
+    // Customer Onboarding is realised_by the workflow service, and the
+    // "Open an account" use case is enabled_by it.
+    assert!(
+        out.contains(&"Onboarding Workflow Service".to_string()),
+        "{out:?}"
+    );
+    assert!(!out.contains(&"Open an account".to_string()), "{out:?}");
+    assert!(inn.contains(&"Open an account".to_string()), "{inn:?}");
+    assert!(out.iter().chain(&inn).all(|n| both.contains(n)), "{both:?}");
+}
+
+#[test]
 fn query_compares_two_fields_with_or_without_backticks() {
     let root = demo_vault();
     for expr in [

@@ -63,6 +63,24 @@ fn unknown_flag_with_json_is_a_usage_error_object() {
 }
 
 #[test]
+fn unknown_walk_direction_is_a_usage_error() {
+    let root = demo_vault();
+    let out = run(
+        &root,
+        &[
+            "--json",
+            "graph",
+            "walk",
+            "Customer Onboarding",
+            "--direction",
+            "sideways",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(json_error(&out)["code"], "usage");
+}
+
+#[test]
 fn unknown_source_is_source_not_found() {
     let root = demo_vault();
     let out = run(&root, &["--json", "source", "show", "no-such-source"]);

@@ -3,6 +3,7 @@ name = "commonplace-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 rust-version.workspace = true
 description = "Core library for the commonplace wiki tool: frontmatter, links, citations, lint, index, search"
 

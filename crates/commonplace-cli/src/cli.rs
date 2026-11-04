@@ -402,7 +402,7 @@ pub(crate) enum LogCmd {
         #[arg(long = "note")]
         notes: Vec<String>,
     },
-    /// Move old entries to archive/log-<year>.md
+    /// Move old entries to archive/log-YYYY.md
     Rotate {
         #[arg(long, default_value_t = 150)]
         keep: usize,

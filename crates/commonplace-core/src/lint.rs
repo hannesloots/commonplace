@@ -21,12 +21,31 @@ pub enum Severity {
 }
 
 impl Severity {
-    pub fn parse(s: &str) -> Severity {
+    /// The lowercase name used in output and in pack rules.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+            Severity::Info => "info",
+        }
+    }
+}
+
+/// Lenient parse of a pack rule's `severity`: `error`/`err` and
+/// `warning`/`warn` in any case; anything else is `Info`.
+impl From<&str> for Severity {
+    fn from(s: &str) -> Self {
         match s.to_ascii_lowercase().as_str() {
             "error" | "err" => Severity::Error,
             "warning" | "warn" => Severity::Warning,
             _ => Severity::Info,
         }
+    }
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(self.as_str())
     }
 }
 
@@ -473,7 +492,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
             let sev = spec
                 .severity
                 .as_deref()
-                .map_or(Severity::Error, Severity::parse);
+                .map_or(Severity::Error, Severity::from);
             if targets.len() < spec.min {
                 let pack_name = self
                     .cx
@@ -1017,7 +1036,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
     }
 
     fn apply_pack_rule(&mut self, r: &pack::Rule) {
-        let sev = Severity::parse(&r.severity);
+        let sev = Severity::from(r.severity.as_str());
         match r.check.as_str() {
             "required" => self.rule_required(r, &sev),
             "enum" => {

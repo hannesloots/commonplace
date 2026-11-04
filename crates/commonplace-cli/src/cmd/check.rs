@@ -47,7 +47,7 @@ pub(crate) fn lint(ctx: &Ctx, a: LintArgs) -> Result<i32> {
         for f in &rep.findings {
             println!(
                 "  [{:<7}] {:<9} {}{}: {}",
-                format!("{:?}", f.severity).to_lowercase(),
+                f.severity,
                 f.rule,
                 f.path,
                 f.line.map(|l| format!(":{l}")).unwrap_or_default(),

@@ -36,7 +36,10 @@ enum Kind {
     #[error("{message}")]
     TextLayerMissing { message: String },
     #[error("{what} already exists")]
-    AlreadyExists { what: String },
+    AlreadyExists {
+        what: String,
+        advice: Option<&'static str>,
+    },
     #[error("no commonplace.toml found in {} or its parents", start.display())]
     NoRoot { start: PathBuf },
     #[error("{message}")]
@@ -99,7 +102,18 @@ impl Error {
 
     /// The page, file or folder described by `what` already exists.
     pub fn already_exists(what: impl Into<String>) -> Self {
-        Self::new(Kind::AlreadyExists { what: what.into() })
+        Self::new(Kind::AlreadyExists {
+            what: what.into(),
+            advice: None,
+        })
+    }
+
+    /// Like [`already_exists`](Self::already_exists), with `advice` as the hint.
+    pub fn already_exists_with(what: impl Into<String>, advice: &'static str) -> Self {
+        Self::new(Kind::AlreadyExists {
+            what: what.into(),
+            advice: Some(advice),
+        })
     }
 
     /// No `commonplace.toml` was found walking up from `start`.
@@ -194,7 +208,11 @@ impl Error {
                 "convert the original, then register it with `commonplace source attach-text`"
                     .into(),
             ),
-            Kind::AlreadyExists { .. } => Some("choose another name, or edit the existing one".into()),
+            Kind::AlreadyExists { advice, .. } => Some(
+                advice
+                    .unwrap_or("choose another name, or edit the existing one")
+                    .into(),
+            ),
             Kind::NoRoot { .. } => Some("run `commonplace init <dir>` or pass --root <dir>".into()),
             Kind::InvalidQuery { .. } => Some(
                 "syntax: field=value, field>value, `a>b`, joined with and/or/not and ( )".into(),

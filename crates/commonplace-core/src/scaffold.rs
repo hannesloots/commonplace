@@ -198,10 +198,10 @@ pub fn init(
     };
     std::fs::create_dir_all(root)?;
     if crate::config::config_path(root).exists() && !force {
-        return Err(Error::already_exists(format!(
-            "{}/commonplace.toml (use --force to re-apply templates; existing pages are never overwritten)",
-            root.display()
-        )));
+        return Err(Error::already_exists_with(
+            format!("{}/commonplace.toml", root.display()),
+            "use --force to re-apply templates; existing pages are never overwritten",
+        ));
     }
     for d in DIRS {
         std::fs::create_dir_all(root.join(d))?;
@@ -448,10 +448,10 @@ pub fn new_page(
     // uniqueness of stem across vault
     for existing in crate::vault::walk_markdown(root) {
         if fsutil::stem(&existing).eq_ignore_ascii_case(&title) {
-            return Err(Error::already_exists(format!(
-                "a page named '{title}' (at {}; extend it, or pick a distinct title)",
-                fsutil::rel(root, &existing)
-            )));
+            return Err(Error::already_exists_with(
+                format!("{} (a page named '{title}')", fsutil::rel(root, &existing)),
+                "extend the existing page, or pick a distinct title",
+            ));
         }
     }
     let raw = std::fs::read_to_string(&tpl_path)?;

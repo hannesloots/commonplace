@@ -8,6 +8,7 @@ use crate::manifest::{Manifest, SourceRecord};
 use anyhow::{Context, Result, anyhow, bail};
 use regex::Regex;
 use serde::Serialize;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -525,7 +526,7 @@ static MD_LINK_URL_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"\]\(<?([^)
 /// number of targets rewritten.
 pub fn absolutise_links(md: &str, base: &str, keep: impl Fn(&str) -> bool) -> (String, usize) {
     let mut n = 0usize;
-    let out = MD_LINK_URL_RE.replace_all(md, |c: &regex::Captures| {
+    let out = MD_LINK_URL_RE.replace_all(md, |c: &regex::Captures<'_>| {
         let href = &c[1];
         if keep(href) {
             return c[0].to_string();
@@ -720,7 +721,7 @@ pub fn page_markers_from_formfeeds(txt: &str) -> (String, usize) {
             break;
         }
         n = i + 1;
-        out.push_str(&format!("<!-- page:{n} -->\n"));
+        let _ = writeln!(out, "<!-- page:{n} -->");
         out.push_str(page.trim_end_matches('\n'));
         out.push('\n');
     }
@@ -741,11 +742,7 @@ fn outline_from_markdown(md: &str) -> Option<String> {
     }
     let mut s = String::new();
     for h in hs.iter().take(60) {
-        s.push_str(&format!(
-            "{}- {}\n",
-            "  ".repeat(h.level.saturating_sub(1)),
-            h.text
-        ));
+        let _ = writeln!(s, "{}- {}", "  ".repeat(h.level.saturating_sub(1)), h.text);
     }
     Some(s)
 }
@@ -823,13 +820,13 @@ pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
         let sec = frontmatter::get_str(&doc.fm, "section")
             .or_else(|| frontmatter::get_str(&doc.fm, "section_id"));
         if let Some(s) = sec {
-            header.push_str(&format!("<!-- section:{s} -->\n"));
+            let _ = writeln!(header, "<!-- section:{s} -->");
         }
         if let Some(pf) = frontmatter::get_str(&doc.fm, "page_from")
             .or_else(|| frontmatter::get_str(&doc.fm, "pages_from"))
             && !doc.body.contains("<!-- page:")
         {
-            header.push_str(&format!("<!-- page:{pf} -->\n"));
+            let _ = writeln!(header, "<!-- page:{pf} -->");
         }
         let body = if doc.has_frontmatter { doc.body } else { t };
         let header_lines = header.lines().count();

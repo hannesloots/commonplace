@@ -193,7 +193,7 @@ fn substitute(v: &mut serde_yaml::Value, profile: &serde_yaml::Value) {
         serde_yaml::Value::String(s) => {
             if s.contains("{{jurisdiction.") {
                 *s = PLACEHOLDER_RE
-                    .replace_all(s, |c: &regex::Captures| {
+                    .replace_all(s, |c: &regex::Captures<'_>| {
                         profile_get(profile, &c[1]).map_or_else(|| c[0].to_string(), scalar_text)
                     })
                     .into_owned();

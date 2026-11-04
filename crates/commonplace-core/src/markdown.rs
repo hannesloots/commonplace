@@ -43,7 +43,7 @@ pub fn mask_code(text: &str) -> String {
             }
             (Some(_), _) => out.push_str(&blank(line)),
             (None, None) => {
-                let masked = INLINE_CODE_RE.replace_all(line, |m: &regex::Captures| blank(&m[0]));
+                let masked = INLINE_CODE_RE.replace_all(line, |m: &regex::Captures<'_>| blank(&m[0]));
                 out.push_str(&masked);
             }
         }
@@ -138,7 +138,7 @@ pub fn footnote_defs(text: &str) -> Vec<FootnoteDef> {
 pub fn footnote_refs(text: &str) -> Vec<(String, usize)> {
     let masked = mask_code(text);
     // Remove definitions first so the def's own `[^x]` is not counted as a reference.
-    let no_defs = FOOTNOTE_DEF_RE.replace_all(&masked, |m: &regex::Captures| blank(&m[0]));
+    let no_defs = FOOTNOTE_DEF_RE.replace_all(&masked, |m: &regex::Captures<'_>| blank(&m[0]));
     FOOTNOTE_REF_RE
         .captures_iter(&no_defs)
         .map(|c| {

@@ -12,6 +12,7 @@ use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::path::Path;
 
 // ---------- log ----------
@@ -23,9 +24,9 @@ pub fn log_append(root: &Path, op: &str, title: &str, bullets: &[String]) -> Res
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(&format!("\n## [{}] {} | {}\n", fsutil::today(), op, title));
+    let _ = write!(text, "\n## [{}] {} | {}\n", fsutil::today(), op, title);
     for b in bullets {
-        text.push_str(&format!("- {b}\n"));
+        let _ = writeln!(text, "- {b}");
     }
     fsutil::write_atomic(&p, text.as_bytes())
 }
@@ -158,7 +159,7 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
         if n == 0 {
             continue;
         }
-        let out = re.replace_all(&text, |c: &regex::Captures| {
+        let out = re.replace_all(&text, |c: &regex::Captures<'_>| {
             let h = c.get(1).map_or("", |m| m.as_str());
             let a = c.get(2).map_or("", |m| m.as_str());
             format!("[[{new_title}{h}{a}]]")
@@ -421,10 +422,11 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
             .get("confidentiality")
             .unwrap_or_else(|| "personal".into());
         if excluded.contains(&conf) {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 "\n<!-- {} omitted: confidentiality {} -->\n",
                 p.rel, conf
-            ));
+            );
             continue;
         }
         let (cites, _) = cite::parse_citations(&p.doc.body);
@@ -445,7 +447,7 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
             }
         }
         if !body.trim_start().starts_with("# ") {
-            out.push_str(&format!("\n# {}\n", p.title));
+            let _ = write!(out, "\n# {}\n", p.title);
         }
         out.push_str(&body);
         out.push('\n');
@@ -456,8 +458,9 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
             let origin = sp.get("origin").unwrap_or_default();
             let pubd = sp.get("published").unwrap_or_default();
             let auth = sp.get("author").unwrap_or_default();
-            out.push_str(&format!(
-                "- **{}**{}{}{} — retrieved {}\n",
+            let _ = writeln!(
+                out,
+                "- **{}**{}{}{} — retrieved {}",
                 sp.title,
                 if auth.is_empty() {
                     String::new()
@@ -475,7 +478,7 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
                     format!(", {origin}")
                 },
                 sp.get("retrieved").unwrap_or_default()
-            ));
+            );
             let _ = id;
         }
     }
@@ -588,12 +591,21 @@ pub fn review_packet(
         bail!("nothing matched {targets:?}");
     }
     let mut out = String::new();
-    out.push_str(&format!("# Review packet — persona: {persona}\n\nGenerated {} by `commonplace review prepare`. Pages: {}\n\n", fsutil::now_iso(), pages.iter().map(|p| p.rel.clone()).collect::<Vec<_>>().join(", ")));
+    let _ = write!(
+        out,
+        "# Review packet — persona: {persona}\n\nGenerated {} by `commonplace review prepare`. Pages: {}\n\n",
+        fsutil::now_iso(),
+        pages
+            .iter()
+            .map(|p| p.rel.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     out.push_str("## Persona brief\n\n");
     out.push_str(persona_text.trim());
     out.push_str("\n\n## Output format\n\nReturn ONLY a JSON array of findings, each:\n```json\n{\"severity\": \"blocker|major|minor|note\", \"page\": \"<rel path>\", \"location\": \"<heading or line>\", \"claim\": \"<the sentence at issue>\", \"problem\": \"<what is wrong>\", \"evidence\": \"<verbatim quote from the page or source span that shows it>\", \"recommendation\": \"<concrete fix>\"}\n```\nReturn `[]` if nothing is wrong. Do not edit any file. Every finding must carry an `evidence` quote.\n\n");
     for p in pages {
-        out.push_str(&format!("---\n\n## Page: {}\n\n", p.rel));
+        let _ = write!(out, "---\n\n## Page: {}\n\n", p.rel);
         out.push_str("```markdown\n");
         out.push_str(&frontmatter::render(&p.doc.fm, &p.doc.body)?);
         out.push_str("\n```\n\n");
@@ -603,10 +615,11 @@ pub fn review_packet(
         }
         out.push_str("### Cited source spans\n\n");
         for c in &cites {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 "#### [^{}] → [[{}]] {}\n\n",
                 c.label, c.source, c.locator_raw
-            ));
+            );
             match sources::load_text_layer(&vault.root, &c.source) {
                 Ok(Some(tl)) => {
                     let (v, found, _near, msg) = cite::verify_quote(
@@ -615,7 +628,7 @@ pub fn review_packet(
                         vault.config.lint.quote_min_words,
                         vault.config.lint.quote_max_words,
                     );
-                    out.push_str(&format!("Deterministic check: **{v:?}** — {msg}\n\n"));
+                    let _ = write!(out, "Deterministic check: **{v:?}** — {msg}\n\n");
                     let lines: Vec<&str> = tl.text.lines().collect();
                     let centre = found.or_else(|| {
                         cite::span(&tl.text, &c.locator).and_then(|s| s.first().map(|x| x.0))
@@ -625,7 +638,7 @@ pub fn review_packet(
                         let to = (l + context_lines * 4).min(lines.len());
                         out.push_str("```text\n");
                         for (i, line) in lines.iter().enumerate().take(to).skip(from) {
-                            out.push_str(&format!("{:>5} | {}\n", i + 1, line));
+                            let _ = writeln!(out, "{:>5} | {}", i + 1, line);
                         }
                         out.push_str("```\n\n");
                     }
@@ -698,7 +711,17 @@ pub fn review_record(
     );
     for f in &findings {
         let g = |k: &str| f.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-        body.push_str(&format!("## [{}] {} — {}\n\n- **Claim:** {}\n- **Problem:** {}\n- **Evidence:** {}\n- **Recommendation:** {}\n- **Resolution:** _pending_\n\n", g("severity"), g("page"), g("location"), g("claim"), g("problem"), g("evidence"), g("recommendation")));
+        let _ = write!(
+            body,
+            "## [{}] {} — {}\n\n- **Claim:** {}\n- **Problem:** {}\n- **Evidence:** {}\n- **Recommendation:** {}\n- **Resolution:** _pending_\n\n",
+            g("severity"),
+            g("page"),
+            g("location"),
+            g("claim"),
+            g("problem"),
+            g("evidence"),
+            g("recommendation")
+        );
     }
     fsutil::write_atomic(
         &vault.root.join(&rel),

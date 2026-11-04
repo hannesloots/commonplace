@@ -8,6 +8,10 @@ use crate::{Error, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Minimum Jaro-Winkler similarity for a title to be offered as a "did you
+/// mean" suggestion; below this, matches are mostly noise.
+const SUGGESTION_CUTOFF: f64 = 0.8;
+
 /// Folders (relative to root) that are not wiki pages.
 /// Name of the tool-owned folder (manifest, templates, packs, reviews).
 pub(crate) const TOOL_DIR: &str = ".commonplace";
@@ -225,7 +229,7 @@ impl Vault {
                 let s = strsim::jaro_winkler(&t, &name.to_lowercase());
                 (name, s)
             })
-            .filter(|(_, s)| *s > 0.8)
+            .filter(|(_, s)| *s > SUGGESTION_CUTOFF)
             .collect();
         cands.sort_by(|a, b| b.1.total_cmp(&a.1));
         cands.dedup_by(|a, b| a.0 == b.0);

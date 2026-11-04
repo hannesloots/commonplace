@@ -10,6 +10,24 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
 
+/// Edge weight of an unlinked title mention relative to a real link (1.0):
+/// a mention is evidence of relatedness, but weaker than a deliberate link.
+const MENTION_WEIGHT: f64 = 0.5;
+/// `PageRank` follow-a-link probability; 0.85 is the value from the original
+/// paper and the common default.
+const PAGERANK_DAMPING: f64 = 0.85;
+/// Upper bound on power iterations; vaults converge well before this.
+const PAGERANK_MAX_ITERATIONS: usize = 60;
+/// Stop iterating when the total rank change (L1) falls below this.
+const PAGERANK_TOLERANCE: f64 = 1e-9;
+/// Upper bound on Louvain aggregation levels (each level merges communities).
+const LOUVAIN_MAX_LEVELS: usize = 20;
+/// Upper bound on local-move passes per level.
+const LOUVAIN_MAX_PASSES: usize = 50;
+/// A move must improve modularity by more than this, so floating-point noise
+/// cannot make nodes oscillate between equal communities.
+const LOUVAIN_MIN_GAIN: f64 = 1e-12;
+
 /// Pages that carry knowledge (orphans/dead ends are judged on these).
 const SYNTHESIS: &[&str] = &[
     "concept",
@@ -49,7 +67,11 @@ impl Net {
             if a == b {
                 continue;
             }
-            let w = if e.rel == "mentions" { 0.5 } else { 1.0 };
+            let w = if e.rel == "mentions" {
+                MENTION_WEIGHT
+            } else {
+                1.0
+            };
             let key = (a.min(b), a.max(b));
             let cur = pairs.entry(key).or_insert(0.0);
             *cur = f64::max(*cur, w);
@@ -78,7 +100,7 @@ impl Net {
 
     /// `PageRank` on the undirected graph (power iteration).
     pub(crate) fn pagerank(&self) -> Vec<f64> {
-        self.personalised_pagerank(&[], 0.85)
+        self.personalised_pagerank(&[], PAGERANK_DAMPING)
     }
 
     /// Personalised `PageRank`: the random walker restarts at `seeds` (all nodes
@@ -99,7 +121,7 @@ impl Net {
         };
         let strength: Vec<f64> = (0..n).map(|i| self.strength(i)).collect();
         let mut pr = restart.clone();
-        for _ in 0..60 {
+        for _ in 0..PAGERANK_MAX_ITERATIONS {
             let mut next = vec![0.0; n];
             let mut dangling = 0.0;
             for i in 0..n {
@@ -117,7 +139,7 @@ impl Net {
                 delta += (next[i] - pr[i]).abs();
             }
             pr = next;
-            if delta < 1e-9 {
+            if delta < PAGERANK_TOLERANCE {
                 break;
             }
         }
@@ -151,7 +173,7 @@ impl Net {
     pub(crate) fn louvain(&self) -> Vec<usize> {
         let mut adj: Vec<Vec<(usize, f64)>> = self.adj.clone();
         let mut membership: Vec<usize> = (0..self.n).collect();
-        for _level in 0..20 {
+        for _level in 0..LOUVAIN_MAX_LEVELS {
             let n = adj.len();
             let Some(comm) = louvain_local_moves(&adj) else {
                 break;
@@ -242,7 +264,7 @@ fn louvain_local_moves(adj: &[Vec<(usize, f64)>]) -> Option<Vec<usize>> {
     let mut comm: Vec<usize> = (0..n).collect();
     let mut tot: Vec<f64> = k.clone();
     let mut moved_any = false;
-    for _pass in 0..50 {
+    for _pass in 0..LOUVAIN_MAX_PASSES {
         let mut moved = false;
         for i in 0..n {
             let ci = comm[i];
@@ -258,7 +280,7 @@ fn louvain_local_moves(adj: &[Vec<(usize, f64)>]) -> Option<Vec<usize>> {
             let mut best_gain = gain(ci);
             for &c in k_in.keys() {
                 let g = gain(c);
-                if g > best_gain + 1e-12 {
+                if g > best_gain + LOUVAIN_MIN_GAIN {
                     best_gain = g;
                     best = c;
                 }
@@ -364,7 +386,7 @@ struct Relatedness<'a> {
 
 impl<'a> Relatedness<'a> {
     fn new(g: &'a Graph, vault: &'a Vault, net: &'a Net, focus: usize) -> Self {
-        let ppr = net.personalised_pagerank(&[focus], 0.85);
+        let ppr = net.personalised_pagerank(&[focus], PAGERANK_DAMPING);
         let ppr_max = ppr
             .iter()
             .enumerate()

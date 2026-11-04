@@ -3,6 +3,11 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
+/// Default `dedupe --threshold`: the title similarity above which two pages
+/// are worth checking as duplicates; tuned so near-synonyms surface without
+/// flooding the list with pages that merely share words.
+const DEDUPE_THRESHOLD: f64 = 0.86;
+
 #[derive(Parser)]
 #[command(name = "commonplace", version = commonplace_core::VERSION, about = "Deterministic tools for a cited markdown research wiki / second brain", long_about = None)]
 pub(crate) struct Cli {
@@ -47,7 +52,7 @@ pub(crate) enum Cmd {
     },
     /// Candidate duplicate pages
     Dedupe {
-        #[arg(long, default_value_t = 0.86)]
+        #[arg(long, default_value_t = DEDUPE_THRESHOLD)]
         threshold: f64,
     },
     /// Regenerate index.md, hubs and the page lists in project/area/topic pages

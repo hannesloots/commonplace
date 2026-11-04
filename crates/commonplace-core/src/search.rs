@@ -79,20 +79,32 @@ fn page_in_scope(p: &Page, opts: &SearchOptions) -> bool {
         && opts.ptype.as_ref().is_none_or(|t| &p.ptype == t)
 }
 
-/// A page as a search document: title weighs 3, aliases, tags and description 2, body 1.
+/// Term-frequency weight of words in a page title: a title match is the
+/// strongest signal that the page is about the query.
+const TITLE_WEIGHT: f64 = 3.0;
+/// Weight of aliases, tags and the description: curated summaries of the page.
+const SUMMARY_WEIGHT: f64 = 2.0;
+/// Weight of body text and source text layers.
+const BODY_WEIGHT: f64 = 1.0;
+/// BM25 term-frequency saturation; 1.2 is the standard Robertson/Sparck Jones default.
+const BM25_K1: f64 = 1.2;
+/// BM25 document-length normalisation; 0.75 is the standard default.
+const BM25_B: f64 = 0.75;
+
+/// A page as a search document: title, then aliases/tags/description, then body.
 fn page_doc(p: &Page) -> Doc {
     let mut tf: HashMap<String, f64> = HashMap::new();
-    add_terms(&mut tf, &p.title, 3.0);
+    add_terms(&mut tf, &p.title, TITLE_WEIGHT);
     for a in &p.aliases {
-        add_terms(&mut tf, a, 2.0);
+        add_terms(&mut tf, a, SUMMARY_WEIGHT);
     }
     for t in &p.tags {
-        add_terms(&mut tf, t, 2.0);
+        add_terms(&mut tf, t, SUMMARY_WEIGHT);
     }
     if let Some(d) = p.get("description") {
-        add_terms(&mut tf, &d, 2.0);
+        add_terms(&mut tf, &d, SUMMARY_WEIGHT);
     }
-    add_terms(&mut tf, &p.doc.body, 1.0);
+    add_terms(&mut tf, &p.doc.body, BODY_WEIGHT);
     Doc::new(
         p.rel.clone(),
         p.title.clone(),
@@ -114,7 +126,7 @@ fn text_layer_docs(vault: &Vault) -> Vec<Doc> {
         }
         if let Ok(text) = std::fs::read_to_string(&path) {
             let mut tf: HashMap<String, f64> = HashMap::new();
-            add_terms(&mut tf, &text, 1.0);
+            add_terms(&mut tf, &text, BODY_WEIGHT);
             docs.push(Doc::new(
                 crate::fsutil::rel(&vault.root, &path),
                 crate::fsutil::stem(&path),
@@ -143,7 +155,7 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
     hits
 }
 
-/// Okapi BM25 (k1 = 1.2, b = 0.75); documents without a matching term are dropped.
+/// Okapi BM25 ([`BM25_K1`], [`BM25_B`]); documents without a matching term are dropped.
 fn bm25(docs: &[Doc], qtokens: &[String]) -> Vec<Hit> {
     let n = crate::count_f64(docs.len());
     if n == 0.0 {
@@ -157,7 +169,7 @@ fn bm25(docs: &[Doc], qtokens: &[String]) -> Vec<Hit> {
             crate::count_f64(docs.iter().filter(|d| d.tf.contains_key(q)).count()),
         );
     }
-    let (k1, b) = (1.2, 0.75);
+    let (k1, b) = (BM25_K1, BM25_B);
     docs.iter()
         .filter_map(|d| {
             let mut score = 0.0;

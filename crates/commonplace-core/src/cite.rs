@@ -200,6 +200,7 @@ pub(crate) fn normalise(s: &str) -> String {
 }
 
 /// A span of the text layer with line numbers, flattened to normalised words.
+#[derive(Debug)]
 pub struct Haystack {
     words: Vec<String>,
     lines: Vec<usize>, // original 1-based line number of each word

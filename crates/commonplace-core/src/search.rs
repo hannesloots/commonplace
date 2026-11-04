@@ -25,6 +25,7 @@ pub struct Hit {
 }
 
 /// What `search` looks through and how many hits it returns.
+#[derive(Debug)]
 pub struct SearchOptions {
     /// Only pages under this folder prefix, e.g. `projects/foo`.
     pub scope: Option<String>,

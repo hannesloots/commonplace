@@ -45,6 +45,7 @@ pub struct IngestReport {
 }
 
 /// Overrides and metadata for `ingest`.
+#[derive(Debug)]
 pub struct IngestOptions {
     /// Title (default: from the file name or document).
     pub title: Option<String>,
@@ -848,12 +849,14 @@ fn outline_from_markdown(md: &str) -> Option<String> {
 /// Locate the text layer for a source id: a single `<id>.text.md` file or a
 /// directory `<id>/` of section files (sorted by name). Returns the virtual
 /// concatenated text plus a map from virtual line to (file, line).
+#[derive(Debug)]
 pub struct TextLayer {
     /// The concatenated text of every part.
     pub text: String,
     pub(crate) parts: Vec<TextPart>,
 }
 
+#[derive(Debug)]
 pub(crate) struct TextPart {
     pub(crate) rel: String,
     pub(crate) start_line: usize, // 1-based virtual line where this part's body starts

@@ -99,6 +99,7 @@ impl Page {
 }
 
 /// A loaded commonplace: its config and every page.
+#[derive(Debug)]
 pub struct Vault {
     /// The commonplace root.
     pub root: PathBuf,

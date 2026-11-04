@@ -3,7 +3,7 @@
 //! The LLM writes and judges; this crate registers, hashes, links, verifies,
 //! indexes and searches.
 
-#![warn(missing_docs)]
+#![warn(missing_docs, missing_debug_implementations)]
 
 pub mod analysis;
 pub mod cite;

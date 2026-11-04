@@ -86,6 +86,7 @@ pub struct LintReport {
 }
 
 /// Which checks a lint run performs.
+#[derive(Debug)]
 pub struct LintOptions {
     /// Only report findings on these relative paths (None = all).
     pub only: Option<HashSet<String>>,

@@ -1,12 +1,15 @@
-//! Domain packs: declarative types, lint rules and traces loaded from
-//! `.commonplace/packs/<name>/pack.yaml`. The binary has no domain knowledge; packs
-//! are data, so a user can add or edit one without touching Rust.
+//! Domain packs: declarative types, lint rules and traces.
+//!
+//! Loaded from `.commonplace/packs/<name>/pack.yaml`. The binary has no domain
+//! knowledge; packs are data, so a user can add or edit one without touching
+//! Rust.
 
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+/// A pack: page types, rules, traces and personas for a domain (EA, legal, ...).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Pack {
@@ -15,6 +18,7 @@ pub struct Pack {
     pub(crate) description: String,
     pub(crate) types: BTreeMap<String, TypeSpec>,
     pub(crate) rules: Vec<Rule>,
+    /// Traceability chains the pack declares.
     pub traces: Vec<Trace>,
     pub(crate) personas: Vec<String>,
     pub(crate) workflows: Vec<String>,
@@ -80,9 +84,11 @@ pub(crate) struct When {
     pub(crate) status_not: Vec<String>,
 }
 
+/// A named traceability chain declared by a pack.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Trace {
+    /// Name used with `trace --name`.
     pub name: String,
     pub(crate) description: String,
     /// Alternating: type, link field, type, link field, type ...
@@ -94,6 +100,10 @@ pub struct Trace {
 /// filled from `jurisdictions/<code>.yaml`, where `code` is `jurisdiction` in
 /// commonplace.toml (`generic` when unset). A list item that is exactly a
 /// placeholder naming a list in the profile is spliced (court codes).
+///
+/// # Errors
+///
+/// `io` or `parse` when a file cannot be read, written or parsed.
 pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Result<Vec<Pack>> {
     let mut out = vec![];
     for raw_name in names {

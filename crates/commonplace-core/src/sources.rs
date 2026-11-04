@@ -1,5 +1,7 @@
-//! The evidence chain: immutable raw original -> faithful text layer with page
-//! and section anchors -> source note. Ingest, convert, verify, and read.
+//! The evidence chain: ingest, convert, verify and read sources.
+//!
+//! Immutable raw original -> faithful text layer with page and section
+//! anchors -> source note.
 
 use crate::config::Config;
 use crate::frontmatter;
@@ -14,34 +16,55 @@ use std::sync::LazyLock;
 
 pub(crate) const RAW_DIR: &str = "sources/raw";
 pub(crate) const TEXT_DIR: &str = "sources/text";
+/// Folder of source notes, relative to the root.
 pub const NOTES_DIR: &str = "sources/notes";
 
+/// What `ingest` registered.
 #[derive(Debug, Clone, Serialize)]
 pub struct IngestReport {
+    /// The new source id (`YYYY-MM-DD Title`).
     pub id: String,
+    /// Vault-relative path of the stored original.
     pub raw: String,
     pub(crate) raw_sha256: String,
+    /// Vault-relative path of the text layer, when conversion succeeded.
     pub text: Option<String>,
+    /// Vault-relative path of the source note.
     pub note: String,
+    /// Converter used (`copy`, `pdftotext`, `pandoc`, ...).
     pub converter: String,
+    /// How faithful the text layer is (`high`, `medium`, `low`).
     pub fidelity: String,
+    /// Page count, when the converter reports pages.
     pub pages: Option<usize>,
     pub(crate) needs_conversion: bool,
+    /// Id of an already registered source with identical content (nothing was ingested).
     pub duplicate_of: Option<String>,
+    /// Problems that did not stop the ingest.
     pub warnings: Vec<String>,
 }
 
+/// Overrides and metadata for `ingest`.
 pub struct IngestOptions {
+    /// Title (default: from the file name or document).
     pub title: Option<String>,
+    /// Publication date `YYYY-MM-DD` (default: today or a date prefix in the title).
     pub date: Option<String>,
+    /// Source kind (document, judgment, article, ...).
     pub kind: Option<String>,
+    /// Where it came from (URL, "email from X", "scan").
     pub origin: Option<String>,
+    /// Project the source belongs to.
     pub project: Option<String>,
+    /// Confidentiality level.
     pub confidentiality: Option<String>,
+    /// Authority level (primary, secondary, ...).
     pub authority: Option<String>,
+    /// Converter to use instead of the automatic choice.
     pub converter: Option<String>,
     /// Keep the original in place and only copy (default) vs move.
     pub move_file: bool,
+    /// Register the file even if the same content is already registered.
     pub force: bool,
 }
 
@@ -287,6 +310,11 @@ fn store_original(
     })
 }
 
+/// Register `src` as an immutable source: store the original, convert it to a text layer and write its note.
+///
+/// # Errors
+///
+/// `invalid_input` when `src` is not a file; `conversion` or `io` failures. A duplicate is not an error: it is reported in `duplicate_of`.
 pub fn ingest(
     root: &Path,
     config: &Config,
@@ -637,12 +665,17 @@ fn normalise_path(p: &str) -> String {
     out + tail
 }
 
+/// What `source relink` changed.
 #[derive(Debug, Clone, Serialize)]
 pub struct RelinkReport {
+    /// Source id.
     pub id: String,
     pub(crate) origin: Option<String>,
+    /// Files whose links were rewritten.
     pub files_changed: Vec<String>,
+    /// Number of links rewritten.
     pub links_rewritten: usize,
+    /// Why the source was skipped, if it was.
     pub skipped: Option<String>,
 }
 
@@ -650,6 +683,10 @@ pub struct RelinkReport {
 /// absolute URLs against the recorded origin, then re-hash the text layer.
 /// Repairs sources ingested before the converter did this itself. Line
 /// numbers do not move, so `L` locators and quotes stay valid.
+///
+/// # Errors
+///
+/// `source_not_found` for an unknown id; `io` or `parse` when a file cannot be read, written or parsed.
 pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
     let mut manifest = Manifest::load(root)?;
     let rec = manifest
@@ -723,6 +760,7 @@ pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
     Ok(rep)
 }
 
+/// Converters found on `PATH`.
 pub fn available_converters() -> Vec<String> {
     [
         "docling",
@@ -743,6 +781,7 @@ pub fn available_converters() -> Vec<String> {
     .collect()
 }
 
+/// Whether `cmd` is an executable on `PATH`.
 pub fn which(cmd: &str) -> bool {
     let Some(paths) = std::env::var_os("PATH") else {
         return false;
@@ -792,6 +831,7 @@ fn outline_from_markdown(md: &str) -> Option<String> {
 /// directory `<id>/` of section files (sorted by name). Returns the virtual
 /// concatenated text plus a map from virtual line to (file, line).
 pub struct TextLayer {
+    /// The concatenated text of every part.
     pub text: String,
     pub(crate) parts: Vec<TextPart>,
 }
@@ -803,6 +843,7 @@ pub(crate) struct TextPart {
 }
 
 impl TextLayer {
+    /// Map a virtual line to `L<n>`, or `<file>:L<n>` for multi-file layers.
     pub fn locate(&self, vline: usize) -> String {
         if self.parts.len() <= 1 {
             return format!("L{vline}");
@@ -828,6 +869,11 @@ pub(crate) fn text_layer_path(root: &Path, id: &str) -> Option<PathBuf> {
     None
 }
 
+/// Load the text layer of source `id`; `None` when it has none.
+///
+/// # Errors
+///
+/// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
 pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
     let Some(p) = text_layer_path(root, id) else {
         return Ok(None);
@@ -887,15 +933,23 @@ pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
     Ok(Some(TextLayer { text, parts }))
 }
 
+/// The integrity check of one source.
 #[derive(Debug, Clone, Serialize)]
 pub struct VerifyEntry {
+    /// Source id.
     pub id: String,
+    /// Whether the original still matches its hash (`None` when it is missing).
     pub raw_ok: Option<bool>,
     pub(crate) text_ok: Option<bool>,
+    /// Human-readable result.
     pub message: String,
 }
 
 /// Re-hash every registered raw original and text layer.
+///
+/// # Errors
+///
+/// `io` or `parse` when a file cannot be read, written or parsed.
 pub fn verify_integrity(root: &Path) -> Result<Vec<VerifyEntry>> {
     let manifest = Manifest::load(root)?;
     let mut out = vec![];
@@ -935,6 +989,10 @@ pub fn verify_integrity(root: &Path) -> Result<Vec<VerifyEntry>> {
 
 /// Register a hand-written or externally converted text layer for a source
 /// (sets hashes, updates the note's `text`/`status`/`fidelity`).
+///
+/// # Errors
+///
+/// `source_not_found` for an unknown id; `text_layer_missing` when no text layer file exists; `io` or `parse` when a file cannot be read, written or parsed.
 pub fn attach_text(root: &Path, id: &str, converter: &str, fidelity: &str) -> Result<String> {
     let mut manifest = Manifest::load(root)?;
     let rec = manifest

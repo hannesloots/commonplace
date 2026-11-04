@@ -1,11 +1,16 @@
-//! Dataview-like frontmatter queries:
-//!   type=capability and `target_maturity>baseline_maturity`
-//!   status!=archived or tags has topic/law
-//!   folder~projects/matter-x and not confidence=low
-//! Operators: = != > < >= <= ~ (substring, case-insensitive) has (list contains) exists
-//! Right-hand side: quoted string, number, or bare word. A bare word that names a
-//! field present on the page (or is written @field) compares two fields.
-//! Virtual fields: folder, path, stem, title, type, wordcount.
+//! Dataview-like frontmatter queries.
+//!
+//! ```text
+//! type=capability and target_maturity>baseline_maturity
+//! status!=archived or tags has topic/law
+//! folder~projects/matter-x and not confidence=low
+//! ```
+//!
+//! Operators: `=` `!=` `>` `<` `>=` `<=` `~` (substring, case-insensitive),
+//! `has` (list contains), `exists`. Right-hand side: quoted string, number, or
+//! bare word. A bare word that names a field present on the page (or is
+//! written `@field`) compares two fields. Virtual fields: `folder`, `path`,
+//! `stem`, `title`, `type`, `wordcount`.
 
 use crate::frontmatter;
 use crate::vault::Page;
@@ -90,19 +95,36 @@ fn lex(input: &str) -> Result<Vec<Tok>> {
     Ok(out)
 }
 
+/// A parsed `query --where` expression.
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Cmp { field: String, op: String, rhs: Rhs },
+    /// `field op rhs`, e.g. `status = seed`.
+    Cmp {
+        /// The field compared (see [`field_value`]).
+        field: String,
+        /// Operator: `=`, `!=`, `<`, `<=`, `>`, `>=`, `~` (contains), `has` or `exists`.
+        op: String,
+        /// What the field is compared with.
+        rhs: Rhs,
+    },
+    /// Both sides hold.
     And(Box<Expr>, Box<Expr>),
+    /// Either side holds.
     Or(Box<Expr>, Box<Expr>),
+    /// The inner expression does not hold.
     Not(Box<Expr>),
 }
 
+/// The right-hand side of a comparison.
 #[derive(Debug, Clone)]
 pub enum Rhs {
+    /// A quoted literal.
     Lit(String),
+    /// Another field's value, written `@field`.
     Field(String),
+    /// An unquoted word, compared as text.
     Bare(String),
+    /// No value: the `exists` operator.
     None,
 }
 
@@ -183,6 +205,11 @@ impl Parser {
     }
 }
 
+/// Parse a `--where` expression.
+///
+/// # Errors
+///
+/// `invalid_query` when the expression does not parse.
 pub fn parse(s: &str) -> Result<Expr> {
     let toks = lex(s)?;
     if toks.is_empty() {
@@ -196,6 +223,7 @@ pub fn parse(s: &str) -> Result<Expr> {
     Ok(e)
 }
 
+/// The value of `field` on `page`, including computed fields such as `type` and `path`.
 pub fn field_value(page: &Page, field: &str) -> Option<Value> {
     match field {
         "folder" => Some(Value::String(page.folder())),
@@ -233,6 +261,7 @@ fn cmp_values(a: &str, op: &str, b: &str) -> bool {
     }
 }
 
+/// Whether `page` satisfies `e`.
 pub fn eval(e: &Expr, page: &Page) -> bool {
     match e {
         Expr::And(a, b) => eval(a, page) && eval(b, page),

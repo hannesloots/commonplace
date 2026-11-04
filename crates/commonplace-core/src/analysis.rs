@@ -1,7 +1,9 @@
-//! Graph analysis over the page graph, in memory: related pages, hubs
-//! (`PageRank`), communities (Louvain), gaps (wanted pages, orphans, dead ends,
-//! uncited sources, bridges), unlinked mentions and contradiction candidates.
-//! Every result carries its reason so the agent can judge, not just trust.
+//! Graph analysis: related pages, hubs, communities, gaps, mentions, conflicts.
+//!
+//! Runs in memory over the page graph: related pages, hubs (`PageRank`),
+//! communities (Louvain), gaps (wanted pages, orphans, dead ends, uncited
+//! sources, bridges), unlinked mentions and contradiction candidates. Every
+//! result carries its reason so the agent can judge, not just trust.
 
 use crate::graph::Graph;
 use crate::vault::{Page, Resolution, Vault};
@@ -343,11 +345,16 @@ fn louvain_aggregate(
         .collect()
 }
 
+/// A page related to the focus page, with the evidence for it.
 #[derive(Debug, Clone, Serialize)]
 pub struct RelatedRow {
+    /// Node id (page stem).
     pub node: String,
+    /// Node label (page type).
     pub label: String,
+    /// Combined relatedness score; higher is closer.
     pub score: f64,
+    /// Human-readable evidence, strongest first.
     pub reasons: Vec<String>,
     pub(crate) description: String,
 }
@@ -556,15 +563,22 @@ fn display_id(g: &Graph, lower: &str) -> String {
         .map_or_else(|| lower.to_string(), |n| n.id.clone())
 }
 
+/// A central page and its centrality measures.
 #[derive(Debug, Clone, Serialize)]
 pub struct HubRow {
+    /// Node id (page stem).
     pub node: String,
+    /// Node label (page type).
     pub label: String,
+    /// `PageRank` on the undirected graph.
     pub pagerank: f64,
+    /// Number of distinct neighbours.
     pub degree: usize,
+    /// Normalised betweenness centrality (how often the page lies on shortest paths).
     pub betweenness: f64,
 }
 
+/// The `limit` most central pages, by `PageRank` (ties by id).
 pub fn hubs(g: &Graph, limit: usize) -> Vec<HubRow> {
     let net = Net::from_graph(g);
     let pr = net.pagerank();
@@ -583,16 +597,24 @@ pub fn hubs(g: &Graph, limit: usize) -> Vec<HubRow> {
     rows
 }
 
+/// A cluster of pages found by Louvain community detection.
 #[derive(Debug, Clone, Serialize)]
 pub struct Community {
+    /// Community number, in order of first appearance.
     pub id: usize,
+    /// Number of member pages.
     pub size: usize,
+    /// Member node ids, most central first.
     pub members: Vec<String>,
+    /// Count of members per page type.
     pub types: BTreeMap<String, usize>,
+    /// The member acting as the cluster's hub (topic, project or area page), if any.
     pub hub: Option<String>,
+    /// Number of distinct sources the members cite.
     pub sources_cited: usize,
 }
 
+/// Communities with at least `min_size` members, largest first.
 pub fn communities(g: &Graph, min_size: usize) -> Vec<Community> {
     let net = Net::from_graph(g);
     let memb = net.louvain();
@@ -649,21 +671,33 @@ pub fn communities(g: &Graph, min_size: usize) -> Vec<Community> {
     out
 }
 
+/// A link target that no page answers (a page worth writing).
 #[derive(Debug, Clone, Serialize)]
 pub struct Wanted {
+    /// The missing page title as written in the links.
     pub target: String,
+    /// Pages that link to it.
     pub referrers: Vec<String>,
+    /// An existing page the link probably meant, if one is close.
     pub suggestion: Option<String>,
 }
 
+/// What the commonplace is missing, from the graph's point of view.
 #[derive(Debug, Clone, Serialize)]
 pub struct Gaps {
+    /// Link targets with no page, most referenced first.
     pub wanted: Vec<Wanted>,
+    /// Content pages nothing links to.
     pub orphans: Vec<String>,
+    /// Content pages that link nowhere.
     pub dead_ends: Vec<String>,
+    /// Source notes nothing links to (superseded sources excluded).
     pub uncited_sources: Vec<String>,
+    /// Clusters with no topic, project or area page to hold them together.
     pub communities_without_hub: Vec<Community>,
+    /// Clusters with synthesis pages that cite at most one source.
     pub single_source_communities: Vec<Community>,
+    /// Pages whose removal would split the graph (highest betweenness).
     pub bridges: Vec<HubRow>,
 }
 
@@ -713,6 +747,7 @@ fn bridges(g: &Graph) -> Vec<HubRow> {
     bridges
 }
 
+/// Compute every gap report for the graph `g` of `vault`.
 pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
     let net = Net::from_graph(g);
     let mut indeg = vec![0usize; net.n];
@@ -770,13 +805,19 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
     }
 }
 
+/// An unlinked mention of another page's title or alias.
 #[derive(Debug, Clone, Serialize)]
 pub struct LinkSuggestion {
     pub(crate) page: String,
+    /// Vault-relative path of the page containing the mention.
     pub path: String,
+    /// 1-based line of the mention.
     pub line: usize,
+    /// The page the mention refers to.
     pub target: String,
+    /// The text that matched (title or alias, as written).
     pub matched: String,
+    /// The line, trimmed, for context.
     pub context: String,
 }
 
@@ -947,12 +988,18 @@ pub fn suggest_links(
     out
 }
 
+/// Two pages worth checking for contradiction or staleness.
 #[derive(Debug, Clone, Serialize)]
 pub struct ConflictCandidate {
+    /// First page (node id).
     pub a: String,
+    /// Second page (node id).
     pub b: String,
+    /// Shared page type.
     pub ptype: String,
+    /// How strongly the pair overlaps; higher is more worth checking.
     pub score: f64,
+    /// Human-readable evidence (shared sources, similar titles, ...).
     pub reasons: Vec<String>,
     pub(crate) updated: (String, String),
 }

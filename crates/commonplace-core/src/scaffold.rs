@@ -1,5 +1,6 @@
-//! `commonplace init`, `commonplace new`, embedded templates and packs. Templates are
-//! compiled into the binary (from skills/commonplace/templates and packs) and copied
+//! `commonplace init`, `commonplace new`, embedded templates and packs.
+//!
+//! Templates are compiled into the binary (from skills/commonplace/templates and packs) and copied
 //! into `.commonplace/` at init so every commonplace is self-contained and can be
 //! customised without touching the skill.
 
@@ -137,6 +138,7 @@ pub(crate) const DIRS: &[&str] = &[
     ".obsidian",
 ];
 
+/// Names of the packs built into the binary.
 pub fn known_packs() -> Vec<String> {
     let mut v: Vec<String> = PACK_FILES
         .iter()
@@ -168,11 +170,16 @@ pub fn known_jurisdictions(pack: &str) -> Vec<String> {
     v
 }
 
+/// What `init` created.
 #[derive(Debug, Serialize, Default)]
 pub struct InitReport {
+    /// The commonplace root.
     pub root: String,
+    /// Files and folders created.
     pub created: Vec<String>,
+    /// Files left as they were because they exist.
     pub skipped: Vec<String>,
+    /// Packs enabled.
     pub packs: Vec<String>,
 }
 
@@ -184,6 +191,11 @@ fn fill(s: &str, name: &str, purpose: &str, title: &str) -> String {
         .replace("{{year}}", &fsutil::today()[..4])
 }
 
+/// Create (or with `force`, re-apply templates to) a commonplace at `root`.
+///
+/// # Errors
+///
+/// `already_exists` when `commonplace.toml` exists and `force` is off; `io` on write failure.
 pub fn init(
     root: &Path,
     name: &str,
@@ -298,6 +310,11 @@ pub fn init(
     Ok(rep)
 }
 
+/// Write the built-in files of `pack` into the commonplace at `root` (an unknown pack writes nothing).
+///
+/// # Errors
+///
+/// `io` on write failure.
 pub fn install_pack(root: &Path, pack: &str) -> Result<()> {
     let (pack, _) = normalise_pack(pack);
     for (rel, content) in PACK_FILES {
@@ -324,9 +341,12 @@ fn merge_local_rules(new: &str, old: &str) -> String {
     }
 }
 
+/// What `new` created.
 #[derive(Debug, Serialize)]
 pub struct NewReport {
+    /// Vault-relative path of the new page.
     pub path: String,
+    /// Page type.
     #[serde(rename = "type")]
     pub ptype: String,
     pub(crate) title: String,
@@ -406,6 +426,11 @@ fn extra_field_value(v: &str) -> serde_yaml::Value {
     }
 }
 
+/// Create a page of type `ptype` from its template.
+///
+/// # Errors
+///
+/// `invalid_input` for an empty title or a type that needs a folder; `already_exists` when the title is taken.
 pub fn new_page(
     root: &Path,
     cfg: &Config,
@@ -470,6 +495,11 @@ pub fn new_page(
     })
 }
 
+/// The brief for persona `name`: the commonplace's own copy, then a pack's, then the skill's.
+///
+/// # Errors
+///
+/// `invalid_input` when no persona of that name exists.
 pub fn persona_text(
     root: &Path,
     skill_dir: Option<&Path>,

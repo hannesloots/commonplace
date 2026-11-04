@@ -1,6 +1,8 @@
-//! Lightweight markdown scanning: code stripping, wikilinks, footnotes,
-//! headings, generated blocks. Regex-based on purpose: it keeps the binary
-//! small and matches what agents actually write.
+//! Lightweight markdown scanning.
+//!
+//! Code stripping, wikilinks, footnotes, headings, generated blocks.
+//! Regex-based on purpose: it keeps the binary small and matches what agents
+//! actually write.
 
 use regex::Regex;
 use std::sync::LazyLock;

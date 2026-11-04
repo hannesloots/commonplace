@@ -1,5 +1,7 @@
-//! Generated navigation: root index.md (L1), hubs for large groups, and the
-//! generated page lists inside project / area / topic pages (maps of content).
+//! Generated navigation: `index.md`, hubs and maps of content.
+//!
+//! Writes the root `index.md` (L1), hubs for large groups, and the generated
+//! page lists inside project / area / topic pages (maps of content).
 
 use crate::Result;
 use crate::frontmatter;
@@ -10,10 +12,14 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+/// What `index` regenerated.
 #[derive(Debug, Serialize, Default)]
 pub struct IndexReport {
+    /// Lines written to `index.md`.
     pub index_lines: usize,
+    /// Hub pages written under `indexes/`.
     pub hubs: Vec<String>,
+    /// Project, area and topic pages whose page lists were refreshed.
     pub mocs_updated: Vec<String>,
 }
 
@@ -275,6 +281,11 @@ fn remove_stale_hubs(vault: &Vault, wanted: &[String]) {
     }
 }
 
+/// Regenerate `index.md`, the hub pages and the page lists in maps of content.
+///
+/// # Errors
+///
+/// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
 pub fn generate(vault: &Vault) -> Result<IndexReport> {
     let mut report = IndexReport::default();
     let threshold = vault.config.index.hub_threshold;

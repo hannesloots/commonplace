@@ -1,5 +1,7 @@
-//! Deterministic hygiene checks. Semantic judgement (does the quote support the
-//! claim, are two pages really the same concept) is left to persona reviews.
+//! Deterministic hygiene checks.
+//!
+//! Semantic judgement (does the quote support the claim, are two pages really
+//! the same concept) is left to persona reviews.
 
 use crate::cite::{self, Verdict};
 use crate::frontmatter;
@@ -12,11 +14,15 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
+/// How serious a lint finding is.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
+    /// Must be fixed; `lint --fail-on error` exits 1.
     Error,
+    /// Should be fixed.
     Warning,
+    /// Worth knowing.
     Info,
 }
 
@@ -49,28 +55,43 @@ impl std::fmt::Display for Severity {
     }
 }
 
+/// One lint finding.
 #[derive(Debug, Clone, Serialize)]
 pub struct Finding {
+    /// How serious it is.
     pub severity: Severity,
+    /// Rule id, e.g. `LINK-001`.
     pub rule: String,
+    /// Vault-relative path of the page.
     pub path: String,
+    /// 1-based line, when the finding has one.
     pub line: Option<usize>,
+    /// What is wrong and how to fix it.
     pub message: String,
 }
 
+/// The result of a lint run.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct LintReport {
+    /// Findings at error level.
     pub errors: usize,
+    /// Findings at warning level.
     pub warnings: usize,
+    /// Findings at info level.
     pub infos: usize,
+    /// Pages examined.
     pub pages_checked: usize,
+    /// Every finding, sorted by path and line.
     pub findings: Vec<Finding>,
 }
 
+/// Which checks a lint run performs.
 pub struct LintOptions {
     /// Only report findings on these relative paths (None = all).
     pub only: Option<HashSet<String>>,
+    /// Verify every citation against its source (slower).
     pub verify_citations: bool,
+    /// Only report these rule ids (or prefixes); `None` reports all.
     pub rules: Option<Vec<String>>,
 }
 
@@ -1414,6 +1435,7 @@ fn finish(vault: &Vault, opts: &LintOptions, all: Vec<Finding>) -> LintReport {
     }
 }
 
+/// Run every deterministic check over `vault` with the enabled `packs`.
 pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
     let cx = Context::new(vault, packs, opts);
     let mut findings = vec![];

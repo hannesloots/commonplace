@@ -1,5 +1,7 @@
-//! Smaller operations: log, changed-set, rename, dedupe, trace, archive,
-//! export, status, review packets.
+//! Smaller operations on a commonplace.
+//!
+//! Log, changed-set, rename, dedupe, trace, archive, export, status and
+//! review packets.
 
 use crate::cite;
 use crate::frontmatter;
@@ -17,6 +19,11 @@ use std::path::Path;
 
 // ---------- log ----------
 
+/// Append an entry `## [date] op | title` with `bullets` to `log.md`.
+///
+/// # Errors
+///
+/// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
 pub fn log_append(root: &Path, op: &str, title: &str, bullets: &[String]) -> Result<()> {
     let p = root.join("log.md");
     let mut text = std::fs::read_to_string(&p)
@@ -32,6 +39,10 @@ pub fn log_append(root: &Path, op: &str, title: &str, bullets: &[String]) -> Res
 }
 
 /// Keep the newest `keep` entries in log.md; move the rest to `archive/log-<year>.md`.
+///
+/// # Errors
+///
+/// `io` or `frontmatter` when `log.md` or an archive file cannot be read or written.
 pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
     let p = root.join("log.md");
     let text = std::fs::read_to_string(&p)?;
@@ -71,6 +82,10 @@ pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
 // ---------- changed set ----------
 
 /// Markdown files changed since the last commit (git) or since the last lint (mtime).
+///
+/// # Errors
+///
+/// `io` when the folder cannot be walked.
 pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
     let mut set = HashSet::new();
     if root.join(".git").exists() {
@@ -128,11 +143,16 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
 
 // ---------- rename ----------
 
+/// What `rename` changed.
 #[derive(Debug, Serialize)]
 pub struct RenameReport {
+    /// Old vault-relative path.
     pub from: String,
+    /// New vault-relative path.
     pub to: String,
+    /// Pages whose links were rewritten.
     pub files_updated: Vec<String>,
+    /// Number of links rewritten.
     pub links_rewritten: usize,
 }
 
@@ -141,6 +161,11 @@ fn title_regex_error(e: &regex::Error) -> Error {
     Error::invalid_input(format!("title is too long to match: {e}"))
 }
 
+/// Rename a page to `new_title` and rewrite every link to it.
+///
+/// # Errors
+///
+/// `page_not_found` for an unknown page, `already_exists` when the new title is taken, `io` on write failure.
 pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport> {
     let page = vault
         .resolve_page(old)
@@ -205,14 +230,20 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
 
 // ---------- dedupe ----------
 
+/// Two pages that may be duplicates.
 #[derive(Debug, Serialize)]
 pub struct DupeCandidate {
+    /// First page (vault-relative path).
     pub a: String,
+    /// Second page (vault-relative path).
     pub b: String,
+    /// Best name similarity, 0–1 (Jaro-Winkler or word overlap).
     pub similarity: f64,
+    /// Why they were paired.
     pub reason: String,
 }
 
+/// Pairs of concept, entity, claim, person, topic and playbook pages whose names or aliases are at least `threshold` similar.
 pub fn dedupe(vault: &Vault, threshold: f64) -> Vec<DupeCandidate> {
     let mut out = vec![];
     let cand: Vec<&Page> = vault
@@ -276,13 +307,19 @@ pub fn dedupe(vault: &Vault, threshold: f64) -> Vec<DupeCandidate> {
 
 // ---------- trace ----------
 
+/// One row of a traceability table.
 #[derive(Debug, Serialize)]
 pub struct TraceRow {
+    /// Page titles along the chain; `—` marks a gap.
     pub cells: Vec<String>,
 }
 
 /// Follow a chain `type, field, type, field, type` and produce rows. A page
 /// with no link in `field` yields a row padded with "—" (a gap).
+///
+/// # Errors
+///
+/// `invalid_input` when `chain` is not `type, field, type[, field, type ...]`.
 pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceRow>)> {
     if chain.len() < 3 || chain.len().is_multiple_of(2) {
         return Err(Error::invalid_input(
@@ -351,6 +388,7 @@ pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceR
     ))
 }
 
+/// The trace called `name` declared by one of `packs`.
 pub fn pack_trace<'a>(packs: &'a [Pack], name: &str) -> Option<&'a crate::pack::Trace> {
     packs
         .iter()
@@ -360,6 +398,11 @@ pub fn pack_trace<'a>(packs: &'a [Pack], name: &str) -> Option<&'a crate::pack::
 
 // ---------- archive ----------
 
+/// Move a project or area (its whole folder) into `archive/`; returns the moved files.
+///
+/// # Errors
+///
+/// `page_not_found`, `already_exists` when the archive folder exists, `io` on move failure.
 pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
     let page = vault
         .resolve_page(target)
@@ -446,6 +489,11 @@ fn bibliography_line(sp: &Page) -> String {
     )
 }
 
+/// Concatenate the `targets` pages into one markdown document with a bibliography, withholding confidential content unless `include_confidential`.
+///
+/// # Errors
+///
+/// `invalid_input` when nothing matches `targets`.
 pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> Result<String> {
     let excluded: &[String] = if include_confidential {
         &[]
@@ -504,25 +552,46 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
 
 // ---------- status ----------
 
+/// Counts and pending work, for `status`.
 #[derive(Debug, Serialize, Default)]
 pub struct Status {
+    /// The commonplace's name.
     pub name: String,
+    /// Number of pages.
     pub pages: usize,
+    /// Pages per type.
     pub by_type: BTreeMap<String, usize>,
+    /// Active project pages.
     pub active_projects: Vec<String>,
+    /// Active projects with no next action recorded.
     pub projects_without_next_action: Vec<String>,
+    /// Files waiting in `inbox/`.
     pub inbox_items: usize,
+    /// Registered sources.
     pub sources_total: usize,
+    /// Sources without a text layer.
     pub sources_unconverted: usize,
+    /// Sources whose note is not yet summarised.
     pub sources_unsummarised: usize,
+    /// Footnote citations across all pages.
     pub citations_total: usize,
+    /// Question pages with status `open`.
     pub open_questions: usize,
+    /// Unresolved entries in pages' `contradictions` lists.
     pub open_contradictions: usize,
+    /// Date of the newest journal entry.
     pub journal_last: Option<String>,
+    /// Enabled packs.
     pub packs: Vec<String>,
+    /// When `lint` last ran.
     pub last_lint: Option<String>,
 }
 
+/// Gather the status counts.
+///
+/// # Errors
+///
+/// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
 pub fn status(vault: &Vault) -> Result<Status> {
     let mut s = Status {
         name: vault.config.name.clone(),
@@ -585,6 +654,11 @@ pub fn status(vault: &Vault) -> Result<Status> {
 
 // ---------- review packets ----------
 
+/// Build a review packet: the persona brief, the target pages and every cited span with `context_lines` of context.
+///
+/// # Errors
+///
+/// `invalid_input` when nothing matches `targets`.
 pub fn review_packet(
     vault: &Vault,
     persona_text: &str,
@@ -658,15 +732,23 @@ pub fn review_packet(
     Ok(out)
 }
 
+/// What `review record` wrote.
 #[derive(Debug, Serialize)]
 pub struct ReviewRecord {
+    /// Pages stamped with the review.
     pub pages_updated: Vec<String>,
+    /// Findings recorded.
     pub findings: usize,
+    /// Findings at blocker severity.
     pub blockers: usize,
 }
 
 /// Record persona findings (JSON array) into the reviewed pages' frontmatter and
 /// write a review page under reviews/.
+///
+/// # Errors
+///
+/// `invalid_input` for malformed findings JSON or no matching pages; `frontmatter` or `io` when a page cannot be updated.
 pub fn review_record(
     vault: &Vault,
     persona: &str,
@@ -815,14 +897,20 @@ impl ReviewPage<'_> {
 
 // ---------- backlinks / links ----------
 
+/// A link whose target has no page.
 #[derive(Debug, Serialize)]
 pub struct LinkIssue {
+    /// Vault-relative path of the linking page.
     pub page: String,
+    /// 1-based line of a body link; `None` for frontmatter links.
     pub line: Option<usize>,
+    /// The target as written.
     pub target: String,
+    /// Existing pages it probably meant.
     pub suggestions: Vec<String>,
 }
 
+/// Every link in the vault whose target has no page.
 pub fn broken_links(vault: &Vault) -> Vec<LinkIssue> {
     let known: HashSet<String> = sources::known_source_ids(&vault.root).into_iter().collect();
     let mut out = vec![];
@@ -874,6 +962,11 @@ fn renumber_footnotes(body: &str, counter: &mut usize) -> String {
         .into_owned()
 }
 
+/// Vault-relative paths of the pages that link to `target`.
+///
+/// # Errors
+///
+/// `page_not_found` for an unknown page.
 pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
     let crate::vault::Resolution::Found(idx) = vault.resolve(target) else {
         return Err(vault.page_not_found(target));

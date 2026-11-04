@@ -1,6 +1,9 @@
-//! commonplace-core: the deterministic half of an LLM-maintained research wiki /
-//! second brain. The LLM writes and judges; this crate registers, hashes,
-//! links, verifies, indexes and searches.
+//! The deterministic half of an LLM-maintained research wiki (second brain).
+//!
+//! The LLM writes and judges; this crate registers, hashes, links, verifies,
+//! indexes and searches.
+
+#![warn(missing_docs)]
 
 pub mod analysis;
 pub mod cite;
@@ -23,6 +26,7 @@ pub mod vault;
 
 pub use error::{Error, Result};
 
+/// The crate version, reported by `commonplace --version` and `doctor`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Compile a regex from a pattern literal written in this crate.

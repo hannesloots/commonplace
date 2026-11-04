@@ -6,16 +6,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+/// The registry of ingested sources (`.commonplace/manifest.json`).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Manifest {
+    /// Source records by source id.
     #[serde(default)]
     pub sources: BTreeMap<String, SourceRecord>,
+    /// When `lint` last ran (RFC 3339).
     #[serde(default)]
     pub last_lint: Option<String>,
+    /// When `index` last ran (RFC 3339).
     #[serde(default)]
     pub last_index: Option<String>,
 }
 
+/// One registered source: where its files are and their hashes at ingest.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SourceRecord {
     pub(crate) raw: String,
@@ -37,6 +42,11 @@ impl Manifest {
     pub(crate) fn path(root: &Path) -> std::path::PathBuf {
         crate::vault::tool_dir(root).join("manifest.json")
     }
+    /// Load the manifest of the commonplace at `root` (empty when absent).
+    ///
+    /// # Errors
+    ///
+    /// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
     pub fn load(root: &Path) -> Result<Self> {
         let p = Self::path(root);
         if !p.exists() {
@@ -45,6 +55,11 @@ impl Manifest {
         let s = std::fs::read_to_string(&p).map_err(|e| Error::io("reading", &p, e))?;
         serde_json::from_str(&s).map_err(|e| Error::parse(&p, e))
     }
+    /// Write the manifest back to `root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
     pub fn save(&self, root: &Path) -> Result<()> {
         let s = serde_json::to_string_pretty(self)?;
         fsutil::write_atomic(&Self::path(root), s.as_bytes())

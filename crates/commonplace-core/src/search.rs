@@ -1,27 +1,40 @@
-//! In-memory BM25 search over pages (title, aliases, tags boosted) and,
-//! optionally, source text layers. Built per run: a few hundred pages take
-//! milliseconds, and nothing on disk can go stale.
+//! In-memory BM25 search over pages and source text layers.
+//!
+//! Title, aliases and tags are boosted. The index is built per run: a few
+//! hundred pages take milliseconds, and nothing on disk can go stale.
 
 use crate::vault::{Page, Vault};
 use serde::Serialize;
 use std::collections::HashMap;
 
+/// A search result.
 #[derive(Debug, Clone, Serialize)]
 pub struct Hit {
+    /// Vault-relative path of the page (or text layer).
     pub rel: String,
     pub(crate) title: String,
+    /// Page type.
     #[serde(rename = "type")]
     pub ptype: String,
+    /// BM25 score; higher is better.
     pub score: f64,
+    /// The best-matching line.
     pub snippet: String,
+    /// 1-based line of the snippet.
     pub line: Option<usize>,
 }
 
+/// What `search` looks through and how many hits it returns.
 pub struct SearchOptions {
-    pub scope: Option<String>, // folder prefix, e.g. "projects/foo"
+    /// Only pages under this folder prefix, e.g. `projects/foo`.
+    pub scope: Option<String>,
+    /// Include pages under `archive/`.
     pub include_archive: bool,
+    /// Also search source text layers.
     pub include_text_layer: bool,
+    /// Only pages of this type.
     pub ptype: Option<String>,
+    /// Maximum number of hits.
     pub limit: usize,
 }
 
@@ -139,6 +152,7 @@ fn text_layer_docs(vault: &Vault) -> Vec<Doc> {
     docs
 }
 
+/// Rank pages (and optionally text layers) for `query` with BM25.
 pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
     let mut docs: Vec<Doc> = vault
         .pages

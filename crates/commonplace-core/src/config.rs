@@ -1,4 +1,4 @@
-//! commonplace.toml and root discovery.
+//! `commonplace.toml` and root discovery.
 
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -22,12 +22,14 @@ pub fn config_path(root: &Path) -> PathBuf {
 }
 pub(crate) const SCHEMA_VERSION: u32 = 1;
 
+/// Settings from `commonplace.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub(crate) schema_version: u32,
     pub(crate) name: String,
     pub(crate) purpose: String,
+    /// Enabled packs.
     pub packs: Vec<String>,
     /// Jurisdiction profile for the legal pack: za, au, en, or a code you add
     /// under .commonplace/packs/legal/jurisdictions/. Empty = generic patterns.
@@ -36,6 +38,7 @@ pub struct Config {
     pub(crate) lint: LintConfig,
     pub(crate) converters: ConvertersConfig,
     pub(crate) privacy: PrivacyConfig,
+    /// Persona review settings.
     pub review: ReviewConfig,
 }
 
@@ -78,6 +81,7 @@ pub(crate) struct PrivacyConfig {
     pub(crate) exclude_from_export: Vec<String>,
 }
 
+/// Persona review settings (`[review]`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ReviewConfig {
@@ -148,6 +152,11 @@ impl Default for ReviewConfig {
 }
 
 impl Config {
+    /// Load the config of the commonplace at `root` (defaults when absent).
+    ///
+    /// # Errors
+    ///
+    /// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
     pub fn load(root: &Path) -> Result<Self> {
         let p = config_path(root);
         let s = std::fs::read_to_string(&p).map_err(|e| Error::io("reading", &p, e))?;
@@ -169,6 +178,11 @@ impl Config {
         Ok(c)
     }
 
+    /// Write the config back to `root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
     pub fn save(&self, root: &Path) -> Result<()> {
         let s = toml::to_string_pretty(self)?;
         crate::fsutil::write_atomic(&config_path(root), s.as_bytes())
@@ -176,6 +190,10 @@ impl Config {
 }
 
 /// Walk up from `start` to find the directory containing commonplace.toml.
+///
+/// # Errors
+///
+/// `no_root` when no `commonplace.toml` is found.
 pub fn find_root(start: &Path) -> Result<PathBuf> {
     let mut cur = Some(start.to_path_buf());
     while let Some(dir) = cur {

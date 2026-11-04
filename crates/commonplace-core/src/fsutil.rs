@@ -6,6 +6,11 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::LazyLock;
 
+/// Write `data` to `path` via a temporary file and rename, creating parent folders.
+///
+/// # Errors
+///
+/// Returns an `io` error when a folder or file cannot be created, written or renamed.
 pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| Error::io("creating", parent, e))?;

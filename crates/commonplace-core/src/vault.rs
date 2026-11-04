@@ -45,13 +45,17 @@ pub(crate) const SKIP_DIRS: &[&str] = &[
 /// Root files that are instructions, not wiki pages.
 pub(crate) const SKIP_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "README.md"];
 
+/// A markdown page of the commonplace.
 #[derive(Debug, Clone)]
 pub struct Page {
     pub(crate) path: PathBuf,
+    /// Vault-relative path with forward slashes, the same on every OS.
     pub rel: String,
+    /// File name without `.md`; unique within the commonplace.
     pub stem: String,
     pub(crate) doc: Document,
     pub(crate) ptype: String,
+    /// `title` from frontmatter, else the first heading, else the stem.
     pub title: String,
     pub(crate) aliases: Vec<String>,
     pub(crate) tags: Vec<String>,
@@ -67,6 +71,7 @@ impl Page {
     pub(crate) fn fm(&self) -> &serde_yaml::Mapping {
         &self.doc.fm
     }
+    /// A frontmatter field as plain text.
     pub fn get(&self, key: &str) -> Option<String> {
         frontmatter::get_str(&self.doc.fm, key)
     }
@@ -87,14 +92,19 @@ impl Page {
         v.extend(self.fm_links.iter().map(|(_, t)| t.clone()));
         v
     }
+    /// Whether the page lives under `archive/`.
     pub fn is_archived(&self) -> bool {
         self.top_folder() == "archive"
     }
 }
 
+/// A loaded commonplace: its config and every page.
 pub struct Vault {
+    /// The commonplace root.
     pub root: PathBuf,
+    /// Settings from `commonplace.toml`.
     pub config: Config,
+    /// Every page, in walk order.
     pub pages: Vec<Page>,
     by_stem: HashMap<String, Vec<usize>>,
     by_alias: HashMap<String, Vec<usize>>,
@@ -102,6 +112,11 @@ pub struct Vault {
 }
 
 impl Vault {
+    /// Load the commonplace at `root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `io` or `parse` error when a file cannot be read, written or parsed.
     pub fn open(root: &Path) -> Result<Self> {
         let config = Config::load(root)?;
         let mut v = Vault {
@@ -261,10 +276,12 @@ impl Vault {
         map
     }
 
+    /// Pages whose type is `t`.
     pub fn pages_of_type<'a>(&'a self, t: &'a str) -> impl Iterator<Item = &'a Page> + 'a {
         self.pages.iter().filter(move |p| p.ptype == t)
     }
 
+    /// Folder of installed packs.
     pub fn packs_dir(&self) -> PathBuf {
         tool_dir(&self.root).join("packs")
     }

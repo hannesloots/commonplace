@@ -46,8 +46,6 @@ allow_attributes_without_reason = "warn"
 clone_on_ref_ptr = "warn"
 # pedantic opt-outs: internal library consumed only by the CLI
 must_use_candidate = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
 
 [profile.release]
 opt-level = "z"

@@ -1,4 +1,6 @@
-//! The commonplace as a typed graph (ontology). Nodes are pages (label = `type`);
+//! The commonplace as a typed graph (ontology).
+//!
+//! Nodes are pages (label = `type`);
 //! edges come from frontmatter link fields (relation = field name), inline
 //! Dataview-style fields in the body (`enabled_by:: [[Page]]`), citations
 //! (`cites`), and plain wikilinks (`mentions`). Supports multi-hop queries and
@@ -16,6 +18,7 @@ use std::sync::LazyLock;
 static INLINE_FIELD_RE: LazyLock<Regex> =
     LazyLock::new(|| crate::re(r"(?m)^\s*(?:[-*]\s*)?([A-Za-z][A-Za-z0-9_\-]*)::\s*(.+)$"));
 
+/// A page as a graph node.
 #[derive(Debug, Clone, Serialize)]
 pub struct Node {
     pub(crate) id: String, // page stem (unique within the commonplace)
@@ -27,6 +30,7 @@ pub struct Node {
     pub(crate) folder: String,
 }
 
+/// A typed, directed link between two pages.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 pub struct Edge {
     pub(crate) from: String,
@@ -34,9 +38,12 @@ pub struct Edge {
     pub(crate) rel: String,
 }
 
+/// The commonplace as a typed graph of pages and links.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Graph {
+    /// Every page, in vault order.
     pub nodes: Vec<Node>,
+    /// Every link between pages.
     pub edges: Vec<Edge>,
     #[serde(skip)]
     index: HashMap<String, usize>,
@@ -148,6 +155,7 @@ fn page_edges(vault: &Vault, p: &Page, include_mentions: bool) -> Vec<(String, S
     out
 }
 
+/// Build the graph of `vault`; `include_mentions` adds unlinked title mentions as `mentions` edges.
 pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
     let mut g = Graph::default();
     for node in vault.pages.iter().filter_map(graph_node) {
@@ -167,6 +175,7 @@ pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
 }
 
 impl Graph {
+    /// The node with id `id` (page stem), if any.
     pub fn node(&self, id: &str) -> Option<&Node> {
         self.index.get(&id.to_lowercase()).map(|&i| &self.nodes[i])
     }
@@ -325,6 +334,7 @@ impl Graph {
         }
     }
 
+    /// Node, edge and component counts, hubs and isolated pages.
     pub fn stats(&self) -> Stats {
         let mut deg: Vec<(String, usize, usize)> = self
             .nodes
@@ -389,6 +399,7 @@ impl Graph {
         }
     }
 
+    /// Export as Cypher `CREATE` statements (Neo4j, Memgraph).
     pub fn to_cypher(&self) -> String {
         let esc = |s: &str| s.replace('\\', "\\\\").replace('\'', "\\'");
         let label = |s: &str| {
@@ -431,6 +442,7 @@ impl Graph {
         s
     }
 
+    /// Export as `GraphML` (yEd, Gephi).
     pub fn to_graphml(&self) -> String {
         let esc = |s: &str| {
             s.replace('&', "&amp;")
@@ -464,6 +476,7 @@ impl Graph {
         s
     }
 
+    /// Export as a Mermaid flowchart, limited to `ids` when given.
     pub fn to_mermaid(&self, ids: Option<&HashSet<String>>) -> String {
         let mut s = String::from("graph LR\n");
         let key = |id: &str| -> String {
@@ -490,6 +503,7 @@ impl Graph {
         s
     }
 
+    /// Export as Graphviz DOT.
     pub fn to_dot(&self) -> String {
         let esc = |s: &str| s.replace('"', "\\\"");
         let mut s =
@@ -517,33 +531,52 @@ impl Graph {
     }
 }
 
+/// A page reached by a walk.
 #[derive(Debug, Clone, Serialize)]
 pub struct WalkRow {
+    /// Node id (page stem).
     pub node: String,
+    /// Node label (page type).
     pub label: String,
+    /// Hops from the start page.
     pub depth: usize,
+    /// The chain of relations that reached it.
     pub path: String,
+    /// The page's `description`.
     pub description: String,
 }
 
+/// The ontology in use: page types and relation types.
 #[derive(Debug, Clone, Serialize)]
 pub struct Schema {
+    /// Count of pages per type.
     pub labels: BTreeMap<String, usize>,
+    /// Relation types with their `from→to` type pairs.
     pub relations: Vec<RelationSpec>,
 }
 
+/// One relation type and where it occurs.
 #[derive(Debug, Clone, Serialize)]
 pub struct RelationSpec {
+    /// Relation name (frontmatter field, or `links`/`mentions`).
     pub rel: String,
+    /// Count of edges per `from→to` type pair.
     pub pairs: BTreeMap<String, usize>,
 }
 
+/// Summary statistics of the graph.
 #[derive(Debug, Clone, Serialize)]
 pub struct Stats {
+    /// Number of pages.
     pub nodes: usize,
+    /// Number of links.
     pub edges: usize,
+    /// Number of connected components.
     pub components: usize,
+    /// Sizes of the largest components.
     pub largest_components: Vec<usize>,
+    /// Pages with the most links, with their degree.
     pub hubs: Vec<(String, usize)>,
+    /// Pages with no links at all.
     pub isolated: Vec<String>,
 }

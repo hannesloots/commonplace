@@ -37,31 +37,46 @@ pub(crate) struct Citation {
     pub(crate) raw: String,
 }
 
+/// Where in a source a citation points, parsed from its locator text.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Locator {
+    /// Pages `from..=to` (PDF page markers).
     Page {
+        /// First page.
         from: u32,
+        /// Last page (inclusive).
         to: u32,
     },
+    /// Paragraphs `from..=to` (numbered paragraphs, e.g. in judgments).
     Para {
+        /// First paragraph.
         from: u32,
+        /// Last paragraph (inclusive).
         to: u32,
     },
+    /// Lines `from..=to` of the text layer.
     Line {
+        /// First line (1-based).
         from: usize,
+        /// Last line (inclusive).
         to: usize,
     },
+    /// A named section (heading slug or section file).
     Section {
+        /// Section identifier as written.
         id: String,
     },
+    /// The whole source.
     Whole,
     /// Something we cannot map to a span (timestamps, free text): verify over the whole file.
     Free {
+        /// The locator text as written.
         text: String,
     },
 }
 
+/// Parse a locator such as `p. 12`, `paras 3-4`, `L10-L20` or `§ intro`.
 pub fn parse_locator(s: &str) -> Locator {
     static L_RE: LazyLock<Regex> =
         LazyLock::new(|| crate::re(r"(?i)^(?:L|lines?\s*)(\d+)(?:\s*[-–]\s*L?(\d+))?$"));
@@ -193,6 +208,7 @@ pub struct Haystack {
 }
 
 impl Haystack {
+    /// Build a haystack from `(line number, text)` pairs.
     pub fn new(lines: &[(usize, &str)]) -> Self {
         let mut words: Vec<String> = vec![];
         let mut line_of: Vec<usize> = vec![];
@@ -394,30 +410,48 @@ pub fn span<'a>(text: &'a str, loc: &Locator) -> Option<Vec<(usize, &'a str)>> {
     }
 }
 
+/// Outcome of verifying one citation.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
+    /// The quote occurs in the cited span.
     Pass,
+    /// The quote occurs nowhere in the source.
     QuoteNotFound,
+    /// The quote occurs in the source, but outside the cited span.
     QuoteNotInSpan,
+    /// The locator does not match any span of the text layer.
     SpanNotFound,
+    /// The footnote has no quote to verify.
     NoQuote,
+    /// The cited source does not exist.
     SourceMissing,
+    /// The source has no text layer to check against.
     TextLayerMissing,
+    /// The quote is too short to be distinctive.
     QuoteTooShort,
+    /// The quote is longer than the configured maximum.
     QuoteTooLong,
 }
 
+/// The result of verifying one footnote citation.
 #[derive(Debug, Clone, Serialize)]
 pub struct CiteResult {
+    /// Vault-relative path of the citing page.
     pub page: String,
+    /// Line of the footnote definition.
     pub line: usize,
+    /// Footnote label.
     pub label: String,
+    /// Cited source id.
     pub source: String,
+    /// Locator text as written.
     pub locator: String,
+    /// What verification found.
     pub verdict: Verdict,
     pub(crate) found_line: Option<usize>,
     pub(crate) nearest_lines: Vec<usize>,
+    /// Human-readable summary of the verdict.
     pub message: String,
 }
 

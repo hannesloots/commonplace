@@ -1,5 +1,7 @@
-//! YAML frontmatter split/parse/serialise. The mapping keeps insertion order so
-//! rewriting a page does not reshuffle its properties.
+//! YAML frontmatter: split, parse and serialise.
+//!
+//! The mapping keeps insertion order so rewriting a page does not reshuffle
+//! its properties.
 
 use crate::{Error, Result};
 use serde_yaml::{Mapping, Value};
@@ -98,6 +100,7 @@ pub(crate) fn get_str(fm: &Mapping, key: &str) -> Option<String> {
     }
 }
 
+/// Render a YAML scalar as plain text (sequences joined with `, `).
 pub fn scalar_to_string(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),

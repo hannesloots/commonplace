@@ -2,7 +2,7 @@
 //! `.commonplace/packs/<name>/pack.yaml`. The binary has no domain knowledge; packs
 //! are data, so a user can add or edit one without touching Rust.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -111,22 +111,33 @@ pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Res
             continue;
         }
         let s = std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
-        let mut value: serde_yaml::Value = serde_yaml::from_str(&s).with_context(|| format!("parsing {}", p.display()))?;
+        let mut value: serde_yaml::Value =
+            serde_yaml::from_str(&s).with_context(|| format!("parsing {}", p.display()))?;
         let mut profile = None;
         let jdir = packs_dir.join(&n).join("jurisdictions");
         if jdir.is_dir() {
-            let code = if jurisdiction.is_empty() { "generic" } else { jurisdiction };
+            let code = if jurisdiction.is_empty() {
+                "generic"
+            } else {
+                jurisdiction
+            };
             let jp = jdir.join(format!("{code}.yaml"));
             if !jp.is_file() {
                 let available = available_jurisdictions(&jdir).join(", ");
-                bail!("pack '{n}' has no jurisdiction profile '{code}' (expected {}); available: {available}. Set `jurisdiction` in commonplace.toml or add the profile", jp.display());
+                bail!(
+                    "pack '{n}' has no jurisdiction profile '{code}' (expected {}); available: {available}. Set `jurisdiction` in commonplace.toml or add the profile",
+                    jp.display()
+                );
             }
-            let js = std::fs::read_to_string(&jp).with_context(|| format!("reading {}", jp.display()))?;
-            let jv: serde_yaml::Value = serde_yaml::from_str(&js).with_context(|| format!("parsing {}", jp.display()))?;
+            let js = std::fs::read_to_string(&jp)
+                .with_context(|| format!("reading {}", jp.display()))?;
+            let jv: serde_yaml::Value =
+                serde_yaml::from_str(&js).with_context(|| format!("parsing {}", jp.display()))?;
             substitute(&mut value, &jv);
             profile = Some(jv);
         }
-        let mut pack: Pack = serde_yaml::from_value(value).with_context(|| format!("parsing {}", p.display()))?;
+        let mut pack: Pack =
+            serde_yaml::from_value(value).with_context(|| format!("parsing {}", p.display()))?;
         if pack.name.is_empty() {
             pack.name = n.clone();
         }
@@ -138,12 +149,25 @@ pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Res
 
 /// Profile codes available in a pack's `jurisdictions/` folder.
 pub fn available_jurisdictions(jdir: &Path) -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir(jdir).map(|rd| rd.flatten().filter_map(|e| e.path().file_stem().map(|s| s.to_string_lossy().to_string())).filter(|s| s != "generic").collect()).unwrap_or_default();
+    let mut v: Vec<String> = std::fs::read_dir(jdir)
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| {
+                    e.path()
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                })
+                .filter(|s| s != "generic")
+                .collect()
+        })
+        .unwrap_or_default();
     v.sort();
     v
 }
 
-static PLACEHOLDER_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{jurisdiction\.([A-Za-z0-9_.]+)\}\}").unwrap());
+static PLACEHOLDER_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"\{\{jurisdiction\.([A-Za-z0-9_.]+)\}\}").unwrap()
+});
 
 fn profile_get<'a>(profile: &'a serde_yaml::Value, dotted: &str) -> Option<&'a serde_yaml::Value> {
     let mut cur = profile;
@@ -158,7 +182,9 @@ fn scalar_text(v: &serde_yaml::Value) -> String {
         serde_yaml::Value::String(s) => s.clone(),
         serde_yaml::Value::Number(n) => n.to_string(),
         serde_yaml::Value::Bool(b) => b.to_string(),
-        serde_yaml::Value::Sequence(seq) => seq.iter().map(scalar_text).collect::<Vec<_>>().join(", "),
+        serde_yaml::Value::Sequence(seq) => {
+            seq.iter().map(scalar_text).collect::<Vec<_>>().join(", ")
+        }
         _ => String::new(),
     }
 }
@@ -167,7 +193,13 @@ fn substitute(v: &mut serde_yaml::Value, profile: &serde_yaml::Value) {
     match v {
         serde_yaml::Value::String(s) => {
             if s.contains("{{jurisdiction.") {
-                *s = PLACEHOLDER_RE.replace_all(s, |c: &regex::Captures| profile_get(profile, &c[1]).map(scalar_text).unwrap_or_else(|| c[0].to_string())).into_owned();
+                *s = PLACEHOLDER_RE
+                    .replace_all(s, |c: &regex::Captures| {
+                        profile_get(profile, &c[1])
+                            .map(scalar_text)
+                            .unwrap_or_else(|| c[0].to_string())
+                    })
+                    .into_owned();
             }
         }
         serde_yaml::Value::Sequence(seq) => {
@@ -176,7 +208,9 @@ fn substitute(v: &mut serde_yaml::Value, profile: &serde_yaml::Value) {
                 if let serde_yaml::Value::String(s) = &item {
                     if let Some(c) = PLACEHOLDER_RE.captures(s) {
                         if c[0].len() == s.len() {
-                            if let Some(serde_yaml::Value::Sequence(items)) = profile_get(profile, &c[1]) {
+                            if let Some(serde_yaml::Value::Sequence(items)) =
+                                profile_get(profile, &c[1])
+                            {
                                 out.extend(items.iter().cloned());
                                 continue;
                             }
@@ -228,7 +262,9 @@ pub fn glob_match(pattern: &str, path: &str) -> bool {
         r.push('$');
         r
     }
-    regex::Regex::new(&to_regex(pattern)).map(|re| re.is_match(path)).unwrap_or(false)
+    regex::Regex::new(&to_regex(pattern))
+        .map(|re| re.is_match(path))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -237,10 +273,17 @@ mod tests {
 
     #[test]
     fn substitutes_scalars_and_splices_lists() {
-        let profile: serde_yaml::Value = serde_yaml::from_str("courts: [A, B]\nsrc: SAFLII\nex:\n  neutral: '[2025] X 1'\n").unwrap();
+        let profile: serde_yaml::Value =
+            serde_yaml::from_str("courts: [A, B]\nsrc: SAFLII\nex:\n  neutral: '[2025] X 1'\n")
+                .unwrap();
         let mut v: serde_yaml::Value = serde_yaml::from_str("enums:\n  court: ['{{jurisdiction.courts}}', other]\nmsg: 'verify on {{jurisdiction.src}} ({{jurisdiction.ex.neutral}})'\nkeep: '{{jurisdiction.missing}}'\n").unwrap();
         substitute(&mut v, &profile);
-        let courts: Vec<String> = v["enums"]["court"].as_sequence().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        let courts: Vec<String> = v["enums"]["court"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect();
         assert_eq!(courts, vec!["A", "B", "other"]);
         assert_eq!(v["msg"].as_str().unwrap(), "verify on SAFLII ([2025] X 1)");
         assert_eq!(v["keep"].as_str().unwrap(), "{{jurisdiction.missing}}");
@@ -249,7 +292,10 @@ mod tests {
     #[test]
     fn globs() {
         assert!(glob_match("projects/*/drafts/**", "projects/x/drafts/a.md"));
-        assert!(glob_match("projects/*/drafts/**", "projects/x/drafts/sub/a.md"));
+        assert!(glob_match(
+            "projects/*/drafts/**",
+            "projects/x/drafts/sub/a.md"
+        ));
         assert!(!glob_match("projects/*/drafts/**", "projects/x/notes/a.md"));
         assert!(glob_match("**/*.md", "a/b/c.md"));
         assert!(glob_match("archive/**", "archive/x.md"));

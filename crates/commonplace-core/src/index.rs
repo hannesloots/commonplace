@@ -17,19 +17,32 @@ pub struct IndexReport {
 }
 
 fn line_for(p: &Page) -> String {
-    let desc = p.get("description").filter(|d| !d.trim().is_empty()).unwrap_or_else(|| first_sentence(&p.doc.body));
+    let desc = p
+        .get("description")
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| first_sentence(&p.doc.body));
     let mut extra = vec![];
     if let Some(s) = p.get("status") {
         if !["mature", "growing", "seed"].contains(&s.as_str()) && !s.is_empty() {
             extra.push(s);
         }
     }
-    if p.get("confidence").as_deref() == Some("contested") || p.get("confidence").as_deref() == Some("low") {
+    if p.get("confidence").as_deref() == Some("contested")
+        || p.get("confidence").as_deref() == Some("low")
+    {
         extra.push(format!("confidence {}", p.get("confidence").unwrap()));
     }
-    let tail = if extra.is_empty() { String::new() } else { format!(" ({})", extra.join(", ")) };
+    let tail = if extra.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", extra.join(", "))
+    };
     let desc: String = desc.chars().take(160).collect();
-    let desc = if desc.trim().is_empty() { "(no description yet)".to_string() } else { desc };
+    let desc = if desc.trim().is_empty() {
+        "(no description yet)".to_string()
+    } else {
+        desc
+    };
     format!("- [[{}]] — {}{}", link_target(p), desc.trim(), tail)
 }
 
@@ -42,15 +55,32 @@ fn first_sentence(body: &str) -> String {
     let masked = markdown::mask_code(body);
     let masked = markdown::mask_comments(&masked);
     // prefer an explicit TL;DR / Answer section
-    let preferred = markdown::section(&masked, "TL;DR").or_else(|| markdown::section(&masked, "Answer")).or_else(|| markdown::section(&masked, "Summary"));
-    let text: String = preferred.map(|s| s.to_string()).filter(|s| markdown::has_prose(s)).unwrap_or(masked.clone());
+    let preferred = markdown::section(&masked, "TL;DR")
+        .or_else(|| markdown::section(&masked, "Answer"))
+        .or_else(|| markdown::section(&masked, "Summary"));
+    let text: String = preferred
+        .map(|s| s.to_string())
+        .filter(|s| markdown::has_prose(s))
+        .unwrap_or(masked.clone());
     for l in text.lines() {
         let t = l.trim();
-        if t.is_empty() || t.starts_with('#') || t.starts_with("<!--") || t.starts_with("- ") || t.starts_with("* ") || t.starts_with("[^") || t.starts_with('|') || t.starts_with("**") {
+        if t.is_empty()
+            || t.starts_with('#')
+            || t.starts_with("<!--")
+            || t.starts_with("- ")
+            || t.starts_with("* ")
+            || t.starts_with("[^")
+            || t.starts_with('|')
+            || t.starts_with("**")
+        {
             continue;
         }
         let s: String = t.chars().take(200).collect();
-        return s.split_inclusive(['.', '!', '?']).next().unwrap_or(&s).to_string();
+        return s
+            .split_inclusive(['.', '!', '?'])
+            .next()
+            .unwrap_or(&s)
+            .to_string();
     }
     String::new()
 }
@@ -66,41 +96,137 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
     let mut groups: Vec<Group> = vec![];
     let pages = &vault.pages;
     let idx = |pred: &dyn Fn(&Page) -> bool| -> Vec<usize> {
-        let mut v: Vec<usize> = pages.iter().enumerate().filter(|(_, p)| pred(p) && p.parse_error.is_none()).map(|(i, _)| i).collect();
+        let mut v: Vec<usize> = pages
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| pred(p) && p.parse_error.is_none())
+            .map(|(i, _)| i)
+            .collect();
         v.sort_by_key(|&i| pages[i].stem.to_lowercase());
         v
     };
-    let is_hub = |p: &Page| p.rel == "index.md" || p.rel.starts_with("indexes/") || p.ptype == "index" || p.ptype == "log";
+    let is_hub = |p: &Page| {
+        p.rel == "index.md"
+            || p.rel.starts_with("indexes/")
+            || p.ptype == "index"
+            || p.ptype == "log"
+    };
 
-    groups.push(Group { title: "Projects".into(), pages: idx(&|p| p.ptype == "project" && !p.is_archived()) });
-    groups.push(Group { title: "Areas".into(), pages: idx(&|p| p.ptype == "area" && !p.is_archived()) });
-    groups.push(Group { title: "Memory".into(), pages: idx(&|p| p.top_folder() == "memory" && !["person"].contains(&p.ptype.as_str())) });
-    groups.push(Group { title: "People".into(), pages: idx(&|p| p.ptype == "person" && !p.is_archived()) });
-    groups.push(Group { title: "Topics".into(), pages: idx(&|p| p.ptype == "topic" && !p.is_archived()) });
-    groups.push(Group { title: "Concepts".into(), pages: idx(&|p| p.ptype == "concept" || p.ptype == "claim") });
-    groups.push(Group { title: "Entities".into(), pages: idx(&|p| p.ptype == "entity" && !p.is_archived()) });
-    groups.push(Group { title: "Playbooks".into(), pages: idx(&|p| p.ptype == "playbook" && !p.is_archived()) });
-    groups.push(Group { title: "Syntheses".into(), pages: idx(&|p| p.ptype == "synthesis" && !p.is_archived()) });
-    groups.push(Group { title: "Decisions".into(), pages: idx(&|p| p.ptype == "decision" && !p.is_archived()) });
-    groups.push(Group { title: "Open questions".into(), pages: idx(&|p| p.ptype == "question" && p.get("status").as_deref() == Some("open")) });
+    groups.push(Group {
+        title: "Projects".into(),
+        pages: idx(&|p| p.ptype == "project" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Areas".into(),
+        pages: idx(&|p| p.ptype == "area" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Memory".into(),
+        pages: idx(&|p| p.top_folder() == "memory" && !["person"].contains(&p.ptype.as_str())),
+    });
+    groups.push(Group {
+        title: "People".into(),
+        pages: idx(&|p| p.ptype == "person" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Topics".into(),
+        pages: idx(&|p| p.ptype == "topic" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Concepts".into(),
+        pages: idx(&|p| p.ptype == "concept" || p.ptype == "claim"),
+    });
+    groups.push(Group {
+        title: "Entities".into(),
+        pages: idx(&|p| p.ptype == "entity" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Playbooks".into(),
+        pages: idx(&|p| p.ptype == "playbook" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Syntheses".into(),
+        pages: idx(&|p| p.ptype == "synthesis" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Decisions".into(),
+        pages: idx(&|p| p.ptype == "decision" && !p.is_archived()),
+    });
+    groups.push(Group {
+        title: "Open questions".into(),
+        pages: idx(&|p| p.ptype == "question" && p.get("status").as_deref() == Some("open")),
+    });
     // pack types not covered
-    let covered = ["project", "area", "person", "topic", "concept", "claim", "entity", "playbook", "synthesis", "decision", "question", "source", "journal", "capture", "review", "index", "log", "registry", "overview", "questions", "error-book", "profile", "preferences", "glossary"];
+    let covered = [
+        "project",
+        "area",
+        "person",
+        "topic",
+        "concept",
+        "claim",
+        "entity",
+        "playbook",
+        "synthesis",
+        "decision",
+        "question",
+        "source",
+        "journal",
+        "capture",
+        "review",
+        "index",
+        "log",
+        "registry",
+        "overview",
+        "questions",
+        "error-book",
+        "profile",
+        "preferences",
+        "glossary",
+    ];
     let mut other: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (i, p) in pages.iter().enumerate() {
-        if !covered.contains(&p.ptype.as_str()) && !p.ptype.is_empty() && !is_hub(p) && !p.is_archived() && p.top_folder() != "memory" {
+        if !covered.contains(&p.ptype.as_str())
+            && !p.ptype.is_empty()
+            && !is_hub(p)
+            && !p.is_archived()
+            && p.top_folder() != "memory"
+        {
             other.entry(p.ptype.clone()).or_default().push(i);
         }
     }
     for (t, v) in other {
-        groups.push(Group { title: format!("{} pages", capitalise(&t)), pages: v });
+        groups.push(Group {
+            title: format!("{} pages", capitalise(&t)),
+            pages: v,
+        });
     }
-    groups.push(Group { title: "Sources".into(), pages: idx(&|p| p.ptype == "source") });
-    groups.push(Group { title: "Journal".into(), pages: { let mut v = idx(&|p| p.ptype == "journal"); v.reverse(); v } });
-    groups.push(Group { title: "Archive".into(), pages: idx(&|p| p.is_archived() && !is_hub(p)) });
+    groups.push(Group {
+        title: "Sources".into(),
+        pages: idx(&|p| p.ptype == "source"),
+    });
+    groups.push(Group {
+        title: "Journal".into(),
+        pages: {
+            let mut v = idx(&|p| p.ptype == "journal");
+            v.reverse();
+            v
+        },
+    });
+    groups.push(Group {
+        title: "Archive".into(),
+        pages: idx(&|p| p.is_archived() && !is_hub(p)),
+    });
 
     let indexes_dir = vault.root.join("indexes");
     let mut body = String::new();
-    body.push_str(&format!("# Index — {}\n\n", if vault.config.name.is_empty() { "commonplace" } else { &vault.config.name }));
+    body.push_str(&format!(
+        "# Index — {}\n\n",
+        if vault.config.name.is_empty() {
+            "commonplace"
+        } else {
+            &vault.config.name
+        }
+    ));
     let existing = std::fs::read_to_string(vault.root.join("index.md")).unwrap_or_default();
     let keep = markdown::generated_block(&existing, "keep").map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| {
         format!("{}\n\nStart here: [[overview]] for the big picture, [[error-book]] for standing constraints, [[open-questions]] for what is unresolved.", vault.config.purpose)
@@ -115,7 +241,10 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
             continue;
         }
         body.push_str(&format!("## {} ({})\n", g.title, g.pages.len()));
-        if g.pages.len() > threshold || g.title == "Archive" || (g.title == "Sources" && g.pages.len() > threshold / 2) {
+        if g.pages.len() > threshold
+            || g.title == "Archive"
+            || (g.title == "Sources" && g.pages.len() > threshold / 2)
+        {
             let hub_name = format!("Index - {}", g.title);
             wanted_hubs.push(hub_name.clone());
             body.push_str(&format!("- [[{hub_name}]] — {} pages\n\n", g.pages.len()));
@@ -123,15 +252,28 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
             let mut fm = serde_yaml::Mapping::new();
             frontmatter::set_str(&mut fm, "type", "index");
             frontmatter::set_str(&mut fm, "group", &g.title);
-            frontmatter::set_value(&mut fm, "page_count", serde_yaml::Value::Number(g.pages.len().into()));
+            frontmatter::set_value(
+                &mut fm,
+                "page_count",
+                serde_yaml::Value::Number(g.pages.len().into()),
+            );
             frontmatter::set_str(&mut fm, "updated", &fsutil::today());
-            h.push_str(&format!("# {hub_name}\n\nGenerated by `commonplace index`; do not edit. Up: [[index]]\n\n"));
+            h.push_str(&format!(
+                "# {hub_name}\n\nGenerated by `commonplace index`; do not edit. Up: [[index]]\n\n"
+            ));
             // group sources by year, others alphabetically with letter headings when large
             if g.title == "Sources" || g.title == "Journal" {
                 let mut by_year: BTreeMap<String, Vec<usize>> = BTreeMap::new();
                 for &i in &g.pages {
                     let y = pages[i].stem.chars().take(4).collect::<String>();
-                    by_year.entry(if y.chars().all(|c| c.is_ascii_digit()) { y } else { "undated".into() }).or_default().push(i);
+                    by_year
+                        .entry(if y.chars().all(|c| c.is_ascii_digit()) {
+                            y
+                        } else {
+                            "undated".into()
+                        })
+                        .or_default()
+                        .push(i);
                 }
                 for (y, v) in by_year.iter().rev() {
                     h.push_str(&format!("## {y}\n"));
@@ -148,7 +290,10 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
                 }
             }
             std::fs::create_dir_all(&indexes_dir)?;
-            fsutil::write_atomic(&indexes_dir.join(format!("{hub_name}.md")), frontmatter::render(&fm, &h)?.as_bytes())?;
+            fsutil::write_atomic(
+                &indexes_dir.join(format!("{hub_name}.md")),
+                frontmatter::render(&fm, &h)?.as_bytes(),
+            )?;
             report.hubs.push(hub_name);
         } else {
             for &i in &g.pages {
@@ -170,7 +315,11 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
     let mut fm = serde_yaml::Mapping::new();
     frontmatter::set_str(&mut fm, "type", "index");
     frontmatter::set_str(&mut fm, "updated", &fsutil::today());
-    frontmatter::set_value(&mut fm, "page_count", serde_yaml::Value::Number(pages.len().into()));
+    frontmatter::set_value(
+        &mut fm,
+        "page_count",
+        serde_yaml::Value::Number(pages.len().into()),
+    );
     let text = frontmatter::render(&fm, &body)?;
     report.index_lines = text.lines().count();
     fsutil::write_atomic(&vault.root.join("index.md"), text.as_bytes())?;
@@ -191,7 +340,11 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
                 if std::ptr::eq(p, q) || is_hub(q) {
                     continue;
                 }
-                let in_scope = if scope.starts_with("topic/") || scope.starts_with('#') { q.tags.iter().any(|t| t == scope.trim_start_matches('#')) } else { q.rel.starts_with(scope.trim_end_matches('/')) };
+                let in_scope = if scope.starts_with("topic/") || scope.starts_with('#') {
+                    q.tags.iter().any(|t| t == scope.trim_start_matches('#'))
+                } else {
+                    q.rel.starts_with(scope.trim_end_matches('/'))
+                };
                 if in_scope {
                     members.push(q);
                 }
@@ -202,7 +355,10 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
                     continue;
                 }
                 let in_folder = !folder.is_empty() && q.rel.starts_with(&format!("{folder}/"));
-                let points_here = q.fm_links.iter().any(|(k, t)| ["project", "projects", "area", "up"].contains(&k.as_str()) && t.eq_ignore_ascii_case(&p.stem));
+                let points_here = q.fm_links.iter().any(|(k, t)| {
+                    ["project", "projects", "area", "up"].contains(&k.as_str())
+                        && t.eq_ignore_ascii_case(&p.stem)
+                });
                 if in_folder || points_here {
                     members.push(q);
                 }
@@ -224,7 +380,10 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
         }
         let new_body = markdown::replace_generated_block(&p.doc.body, "pages", block.trim_end());
         if new_body != p.doc.body {
-            fsutil::write_atomic(&p.path, frontmatter::render(&p.doc.fm, &new_body)?.as_bytes())?;
+            fsutil::write_atomic(
+                &p.path,
+                frontmatter::render(&p.doc.fm, &new_body)?.as_bytes(),
+            )?;
             report.mocs_updated.push(p.rel.clone());
         }
     }

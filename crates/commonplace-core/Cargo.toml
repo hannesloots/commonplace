@@ -3,6 +3,7 @@ name = "commonplace-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 description = "Core library for the commonplace wiki tool: frontmatter, links, citations, lint, index, search"
 
 [dependencies]
@@ -20,3 +21,6 @@ strsim.workspace = true
 toml.workspace = true
 unicode-normalization.workspace = true
 walkdir.workspace = true
+
+[lints]
+workspace = true

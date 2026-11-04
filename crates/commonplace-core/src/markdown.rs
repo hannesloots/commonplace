@@ -11,8 +11,10 @@ pub static FOOTNOTE_DEF_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^\[\^([A-Za-z0-9_\-]+)\]:[ \t]*(.*)$").unwrap());
 pub static FOOTNOTE_REF_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\^([A-Za-z0-9_\-]+)\]").unwrap());
-pub static HEADING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$").unwrap());
-static FENCE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[ \t]{0,3}(```|~~~)").unwrap());
+pub static HEADING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$").unwrap());
+static FENCE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^[ \t]{0,3}(```|~~~)").unwrap());
 static INLINE_CODE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`[^`\n]*`").unwrap());
 
 /// Replace fenced code blocks and inline code with spaces of equal length, so
@@ -22,13 +24,21 @@ pub fn mask_code(text: &str) -> String {
     let mut in_fence: Option<&str> = None;
     for line in text.split_inclusive('\n') {
         let trimmed = line.trim_start();
-        let fence = FENCE_RE.find(line).map(|m| if m.as_str().trim_start().starts_with("```") { "```" } else { "~~~" });
+        let fence = FENCE_RE.find(line).map(|m| {
+            if m.as_str().trim_start().starts_with("```") {
+                "```"
+            } else {
+                "~~~"
+            }
+        });
         match (in_fence, fence) {
             (None, Some(f)) => {
                 in_fence = Some(f);
                 out.push_str(&blank(line));
             }
-            (Some(f), Some(g)) if f == g && trimmed.trim_end().chars().all(|c| c == '`' || c == '~') => {
+            (Some(f), Some(g))
+                if f == g && trimmed.trim_end().chars().all(|c| c == '`' || c == '~') =>
+            {
                 in_fence = None;
                 out.push_str(&blank(line));
             }
@@ -64,7 +74,9 @@ pub fn mask_comments(text: &str) -> String {
 }
 
 fn blank(s: &str) -> String {
-    s.chars().map(|c| if c == '\n' { '\n' } else { ' ' }).collect()
+    s.chars()
+        .map(|c| if c == '\n' { '\n' } else { ' ' })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,7 +99,10 @@ pub fn wikilinks(text: &str) -> Vec<WikiLink> {
         }
         out.push(WikiLink {
             target,
-            heading: cap.get(2).map(|h| h.as_str().trim().to_string()).filter(|s| !s.is_empty()),
+            heading: cap
+                .get(2)
+                .map(|h| h.as_str().trim().to_string())
+                .filter(|s| !s.is_empty()),
             alias: cap.get(3).map(|a| a.as_str().trim().to_string()),
             line,
         });
@@ -97,7 +112,10 @@ pub fn wikilinks(text: &str) -> Vec<WikiLink> {
 
 /// Raw link targets inside a string (e.g. a frontmatter `sources:` entry).
 pub fn wikilink_targets_in(s: &str) -> Vec<String> {
-    WIKILINK_RE.captures_iter(s).map(|c| c[1].trim().to_string()).collect()
+    WIKILINK_RE
+        .captures_iter(s)
+        .map(|c| c[1].trim().to_string())
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +130,11 @@ pub fn footnote_defs(text: &str) -> Vec<FootnoteDef> {
         .captures_iter(text)
         .map(|c| {
             let m = c.get(0).unwrap();
-            FootnoteDef { label: c[1].to_string(), text: c[2].trim().to_string(), line: text[..m.start()].matches('\n').count() + 1 }
+            FootnoteDef {
+                label: c[1].to_string(),
+                text: c[2].trim().to_string(),
+                line: text[..m.start()].matches('\n').count() + 1,
+            }
         })
         .collect()
 }
@@ -125,7 +147,10 @@ pub fn footnote_refs(text: &str) -> Vec<(String, usize)> {
         .captures_iter(&no_defs)
         .map(|c| {
             let m = c.get(0).unwrap();
-            (c[1].to_string(), no_defs[..m.start()].matches('\n').count() + 1)
+            (
+                c[1].to_string(),
+                no_defs[..m.start()].matches('\n').count() + 1,
+            )
         })
         .collect()
 }
@@ -143,23 +168,35 @@ pub fn headings(text: &str) -> Vec<Heading> {
         .captures_iter(&masked)
         .map(|c| {
             let m = c.get(0).unwrap();
-            Heading { level: c[1].len(), text: c[2].trim().to_string(), line: masked[..m.start()].matches('\n').count() + 1 }
+            Heading {
+                level: c[1].len(),
+                text: c[2].trim().to_string(),
+                line: masked[..m.start()].matches('\n').count() + 1,
+            }
         })
         .collect()
 }
 
 /// First H1 in the body, if any.
 pub fn first_h1(text: &str) -> Option<String> {
-    headings(text).into_iter().find(|h| h.level == 1).map(|h| h.text)
+    headings(text)
+        .into_iter()
+        .find(|h| h.level == 1)
+        .map(|h| h.text)
 }
 
 /// Text under a given heading (until the next heading of same or higher level).
 pub fn section<'a>(text: &'a str, heading: &str) -> Option<&'a str> {
     let hs = headings(text);
-    let idx = hs.iter().position(|h| h.text.eq_ignore_ascii_case(heading))?;
+    let idx = hs
+        .iter()
+        .position(|h| h.text.eq_ignore_ascii_case(heading))?;
     let start_line = hs[idx].line; // 1-based
     let level = hs[idx].level;
-    let end_line = hs[idx + 1..].iter().find(|h| h.level <= level).map(|h| h.line);
+    let end_line = hs[idx + 1..]
+        .iter()
+        .find(|h| h.level <= level)
+        .map(|h| h.line);
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     let start_byte: usize = lines[..start_line].iter().map(|l| l.len()).sum();
     let end_byte: usize = match end_line {
@@ -254,13 +291,20 @@ mod tests {
         let legacy = "# T\n\n<!-- brain:pages:start -->\nold\n<!-- brain:pages:end -->\n";
         assert_eq!(generated_block(legacy, "pages").unwrap().trim(), "old");
         let up = replace_generated_block(legacy, "pages", "new");
-        assert!(up.contains("<!-- commonplace:pages:start -->\nnew\n<!-- commonplace:pages:end -->") && !up.contains("brain:"));
+        assert!(
+            up.contains("<!-- commonplace:pages:start -->\nnew\n<!-- commonplace:pages:end -->")
+                && !up.contains("brain:")
+        );
         let t = "# T\n\nintro\n\n<!-- commonplace:pages:start -->\nold\n<!-- commonplace:pages:end -->\n\ntail\n";
         let n = replace_generated_block(t, "pages", "new");
-        assert!(n.contains("<!-- commonplace:pages:start -->\nnew\n<!-- commonplace:pages:end -->"));
+        assert!(
+            n.contains("<!-- commonplace:pages:start -->\nnew\n<!-- commonplace:pages:end -->")
+        );
         assert!(n.ends_with("tail\n"));
         let a = replace_generated_block("# T\n", "pages", "x");
-        assert!(a.ends_with("<!-- commonplace:pages:start -->\nx\n<!-- commonplace:pages:end -->\n"));
+        assert!(
+            a.ends_with("<!-- commonplace:pages:start -->\nx\n<!-- commonplace:pages:end -->\n")
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@
 
 use crate::frontmatter;
 use crate::vault::Page;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde_yaml::Value;
 
 #[derive(Debug, Clone)]
@@ -154,7 +154,11 @@ impl Parser {
                     _ => return Err(anyhow!("expected operator after '{field}'")),
                 };
                 if op == "exists" {
-                    return Ok(Expr::Cmp { field, op, rhs: Rhs::None });
+                    return Ok(Expr::Cmp {
+                        field,
+                        op,
+                        rhs: Rhs::None,
+                    });
                 }
                 let rhs = match self.next() {
                     Some(Tok::Str(s)) => Rhs::Lit(s),
@@ -194,7 +198,9 @@ pub fn field_value(page: &Page, field: &str) -> Option<Value> {
         "stem" | "name" => Some(Value::String(page.stem.clone())),
         "title" => Some(Value::String(page.title.clone())),
         "type" => Some(Value::String(page.ptype.clone())),
-        "wordcount" => Some(Value::Number(crate::markdown::word_count(&page.doc.body).into())),
+        "wordcount" => Some(Value::Number(
+            crate::markdown::word_count(&page.doc.body).into(),
+        )),
         _ => page.fm().get(field).cloned(),
     }
 }
@@ -245,10 +251,17 @@ pub fn eval(e: &Expr, page: &Page) -> bool {
             match (lv, op.as_str()) {
                 (None, "!=") => true,
                 (None, _) => false,
-                (Some(Value::Sequence(seq)), "has") => seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv) || scalar(x).to_lowercase().contains(&rv.to_lowercase())),
+                (Some(Value::Sequence(seq)), "has") => seq.iter().any(|x| {
+                    scalar(x).eq_ignore_ascii_case(&rv)
+                        || scalar(x).to_lowercase().contains(&rv.to_lowercase())
+                }),
                 (Some(v), "has") => scalar(&v).to_lowercase().contains(&rv.to_lowercase()),
-                (Some(Value::Sequence(seq)), "=") => seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv)),
-                (Some(Value::Sequence(seq)), "!=") => !seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv)),
+                (Some(Value::Sequence(seq)), "=") => {
+                    seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv))
+                }
+                (Some(Value::Sequence(seq)), "!=") => {
+                    !seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv))
+                }
                 (Some(v), op) => cmp_values(&scalar(&v), op, &rv),
             }
         }

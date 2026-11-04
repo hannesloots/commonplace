@@ -1,9 +1,11 @@
 //! `commonplace` — deterministic hygiene tools for an LLM-maintained research wiki.
 //! Exit codes: 0 ok · 1 findings at error level · 2 usage error · 3 integrity violation.
 
-use anyhow::{anyhow, Result};
-use commonplace_core::{cite, config, index, lint, ops, pack, scaffold, search, sources, vault::Vault};
+use anyhow::{Result, anyhow};
 use clap::{Args, Parser, Subcommand};
+use commonplace_core::{
+    cite, config, index, lint, ops, pack, scaffold, search, sources, vault::Vault,
+};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -333,10 +335,7 @@ enum CiteCmd {
         paths: Vec<String>,
     },
     /// Find where a quote occurs in a source (to build a locator)
-    Find {
-        source: String,
-        quote: String,
-    },
+    Find { source: String, quote: String },
 }
 
 #[derive(Subcommand)]
@@ -432,7 +431,11 @@ fn load_packs(v: &Vault) -> Result<Vec<pack::Pack>> {
 }
 
 fn skill_dir() -> Option<PathBuf> {
-    std::env::var_os("COMMONPLACE_SKILL_DIR").or_else(|| std::env::var_os("BRAIN_SKILL_DIR")).map(PathBuf::from).or_else(|| std::env::var_os("CLAUDE_SKILL_DIR").map(PathBuf::from)).filter(|p| p.is_dir())
+    std::env::var_os("COMMONPLACE_SKILL_DIR")
+        .or_else(|| std::env::var_os("BRAIN_SKILL_DIR"))
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("CLAUDE_SKILL_DIR").map(PathBuf::from))
+        .filter(|p| p.is_dir())
 }
 
 fn print_json<T: serde::Serialize>(v: &T) {
@@ -440,7 +443,10 @@ fn print_json<T: serde::Serialize>(v: &T) {
 }
 
 fn paths_set(paths: &[String], changed: bool, root: &Path) -> Result<Option<HashSet<String>>> {
-    let mut set: HashSet<String> = paths.iter().map(|p| p.trim_start_matches("./").to_string()).collect();
+    let mut set: HashSet<String> = paths
+        .iter()
+        .map(|p| p.trim_start_matches("./").to_string())
+        .collect();
     if changed {
         set.extend(ops::changed_files(root)?);
         if set.is_empty() {
@@ -454,7 +460,14 @@ fn paths_set(paths: &[String], changed: bool, root: &Path) -> Result<Option<Hash
 fn run(cli: Cli) -> Result<i32> {
     let json = cli.json;
     match cli.cmd {
-        Cmd::Init { path, name, purpose, pack, jurisdiction, force } => {
+        Cmd::Init {
+            path,
+            name,
+            purpose,
+            pack,
+            jurisdiction,
+            force,
+        } => {
             let root = path.unwrap_or(std::env::current_dir()?);
             let rep = scaffold::init(&root, &name, &purpose, &pack, &jurisdiction, force)?;
             // generate an index so the commonplace lints clean from the start
@@ -474,9 +487,14 @@ fn run(cli: Cli) -> Result<i32> {
                     println!("  packs   {}", rep.packs.join(", "));
                 }
                 if rep.packs.iter().any(|p| p == "legal") {
-                    let j = config::Config::load(&root).map(|c| c.jurisdiction).unwrap_or_default();
+                    let j = config::Config::load(&root)
+                        .map(|c| c.jurisdiction)
+                        .unwrap_or_default();
                     if j.is_empty() {
-                        println!("  legal pack: no jurisdiction set (generic citation patterns). Set one: `commonplace pack install legal --jurisdiction {}`", scaffold::known_jurisdictions("legal").join("|"));
+                        println!(
+                            "  legal pack: no jurisdiction set (generic citation patterns). Set one: `commonplace pack install legal --jurisdiction {}`",
+                            scaffold::known_jurisdictions("legal").join("|")
+                        );
                     } else {
                         println!("  legal pack: jurisdiction {j}");
                     }
@@ -505,16 +523,70 @@ fn run(cli: Cli) -> Result<i32> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&info)?);
             } else {
-                println!("commonplace {} on {}/{}", commonplace_core::VERSION, std::env::consts::OS, std::env::consts::ARCH);
-                println!("root:       {}", info["root"].as_str().unwrap_or("(none found: run `commonplace init` or pass --root)"));
-                println!("git:        {}{}", if git { "available" } else { "missing" }, if info["git_repo"].as_bool().unwrap_or(false) { ", commonplace is a repo" } else { "" });
-                println!("converters: {}", if info["converters"].as_array().map(|a| a.is_empty()).unwrap_or(true) { "none (PDF/DOCX will need manual conversion)".to_string() } else { info["converters"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect::<Vec<_>>().join(", ") });
-                println!("packs:      enabled {:?}; known {:?}", info["packs_enabled"], info["packs_known"]);
-                if info["packs_enabled"].as_array().map(|a| a.iter().any(|p| p == "legal")).unwrap_or(false) {
+                println!(
+                    "commonplace {} on {}/{}",
+                    commonplace_core::VERSION,
+                    std::env::consts::OS,
+                    std::env::consts::ARCH
+                );
+                println!(
+                    "root:       {}",
+                    info["root"]
+                        .as_str()
+                        .unwrap_or("(none found: run `commonplace init` or pass --root)")
+                );
+                println!(
+                    "git:        {}{}",
+                    if git { "available" } else { "missing" },
+                    if info["git_repo"].as_bool().unwrap_or(false) {
+                        ", commonplace is a repo"
+                    } else {
+                        ""
+                    }
+                );
+                println!(
+                    "converters: {}",
+                    if info["converters"]
+                        .as_array()
+                        .map(|a| a.is_empty())
+                        .unwrap_or(true)
+                    {
+                        "none (PDF/DOCX will need manual conversion)".to_string()
+                    } else {
+                        info["converters"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|v| v.as_str().unwrap().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
+                );
+                println!(
+                    "packs:      enabled {:?}; known {:?}",
+                    info["packs_enabled"], info["packs_known"]
+                );
+                if info["packs_enabled"]
+                    .as_array()
+                    .map(|a| a.iter().any(|p| p == "legal"))
+                    .unwrap_or(false)
+                {
                     let j = info["jurisdiction"].as_str().unwrap_or("");
-                    println!("legal:      jurisdiction {}", if j.is_empty() { "NOT SET (generic patterns; `commonplace pack install legal --jurisdiction za|au|en`)".to_string() } else { j.to_string() });
+                    println!(
+                        "legal:      jurisdiction {}",
+                        if j.is_empty() {
+                            "NOT SET (generic patterns; `commonplace pack install legal --jurisdiction za|au|en`)".to_string()
+                        } else {
+                            j.to_string()
+                        }
+                    );
                 }
-                println!("skill dir:  {}", info["skill_dir"].as_str().unwrap_or("(not set; pass COMMONPLACE_SKILL_DIR for persona lookup)"));
+                println!(
+                    "skill dir:  {}",
+                    info["skill_dir"]
+                        .as_str()
+                        .unwrap_or("(not set; pass COMMONPLACE_SKILL_DIR for persona lookup)")
+                );
             }
             Ok(0)
         }
@@ -524,18 +596,65 @@ fn run(cli: Cli) -> Result<i32> {
             if json {
                 print_json(&s);
             } else {
-                println!("{} — {} pages, {} sources ({} unconverted, {} not yet summarised), {} citations", s.name, s.pages, s.sources_total, s.sources_unconverted, s.sources_unsummarised, s.citations_total);
-                println!("active projects: {}", if s.active_projects.is_empty() { "none".into() } else { s.active_projects.join(", ") });
+                println!(
+                    "{} — {} pages, {} sources ({} unconverted, {} not yet summarised), {} citations",
+                    s.name,
+                    s.pages,
+                    s.sources_total,
+                    s.sources_unconverted,
+                    s.sources_unsummarised,
+                    s.citations_total
+                );
+                println!(
+                    "active projects: {}",
+                    if s.active_projects.is_empty() {
+                        "none".into()
+                    } else {
+                        s.active_projects.join(", ")
+                    }
+                );
                 if !s.projects_without_next_action.is_empty() {
-                    println!("  without next action: {}", s.projects_without_next_action.join(", "));
+                    println!(
+                        "  without next action: {}",
+                        s.projects_without_next_action.join(", ")
+                    );
                 }
-                println!("inbox: {} · open questions: {} · open contradictions: {} · last journal: {}", s.inbox_items, s.open_questions, s.open_contradictions, s.journal_last.as_deref().unwrap_or("none"));
-                println!("by type: {}", s.by_type.iter().map(|(k, n)| format!("{k} {n}")).collect::<Vec<_>>().join(", "));
-                println!("packs: {:?} · last lint: {}", s.packs, s.last_lint.as_deref().unwrap_or("never"));
+                println!(
+                    "inbox: {} · open questions: {} · open contradictions: {} · last journal: {}",
+                    s.inbox_items,
+                    s.open_questions,
+                    s.open_contradictions,
+                    s.journal_last.as_deref().unwrap_or("none")
+                );
+                println!(
+                    "by type: {}",
+                    s.by_type
+                        .iter()
+                        .map(|(k, n)| format!("{k} {n}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                println!(
+                    "packs: {:?} · last lint: {}",
+                    s.packs,
+                    s.last_lint.as_deref().unwrap_or("never")
+                );
             }
             Ok(0)
         }
-        Cmd::Ingest { files, title, date, kind, origin, project, confidentiality, authority, converter, r#move, force } => {
+        Cmd::Ingest {
+            files,
+            title,
+            date,
+            kind,
+            origin,
+            project,
+            confidentiality,
+            authority,
+            converter,
+            r#move,
+            force,
+        } => {
             let root = find_root(&cli.root)?;
             let cfg = config::Config::load(&root)?;
             if files.is_empty() {
@@ -543,13 +662,39 @@ fn run(cli: Cli) -> Result<i32> {
             }
             let mut reports = vec![];
             for f in &files {
-                let opts = sources::IngestOptions { title: if files.len() == 1 { title.clone() } else { None }, date: date.clone(), kind: kind.clone(), origin: origin.clone(), project: project.clone(), confidentiality: confidentiality.clone(), authority: authority.clone(), converter: converter.clone(), move_file: r#move, force };
+                let opts = sources::IngestOptions {
+                    title: if files.len() == 1 {
+                        title.clone()
+                    } else {
+                        None
+                    },
+                    date: date.clone(),
+                    kind: kind.clone(),
+                    origin: origin.clone(),
+                    project: project.clone(),
+                    confidentiality: confidentiality.clone(),
+                    authority: authority.clone(),
+                    converter: converter.clone(),
+                    move_file: r#move,
+                    force,
+                };
                 let rep = sources::ingest(&root, &cfg, f, &opts)?;
                 if !json {
                     if let Some(d) = &rep.duplicate_of {
                         println!("{}: already ingested as [[{d}]]", f.display());
                     } else {
-                        println!("ingested [[{}]]\n  raw:  {}\n  text: {}\n  note: {}\n  converter: {} (fidelity {}{})", rep.id, rep.raw, rep.text.as_deref().unwrap_or("(none — needs conversion)"), rep.note, rep.converter, rep.fidelity, rep.pages.map(|p| format!(", {p} pages")).unwrap_or_default());
+                        println!(
+                            "ingested [[{}]]\n  raw:  {}\n  text: {}\n  note: {}\n  converter: {} (fidelity {}{})",
+                            rep.id,
+                            rep.raw,
+                            rep.text.as_deref().unwrap_or("(none — needs conversion)"),
+                            rep.note,
+                            rep.converter,
+                            rep.fidelity,
+                            rep.pages
+                                .map(|p| format!(", {p} pages"))
+                                .unwrap_or_default()
+                        );
                     }
                     for w in &rep.warnings {
                         println!("  warning: {w}");
@@ -560,7 +705,9 @@ fn run(cli: Cli) -> Result<i32> {
             if json {
                 print_json(&reports);
             } else {
-                println!("Next: read the text layer, write the note's TL;DR / summary / key quotes, set status: summarised, then integrate into concept and project pages.");
+                println!(
+                    "Next: read the text layer, write the note's TL;DR / summary / key quotes, set status: summarised, then integrate into concept and project pages."
+                );
             }
             Ok(0)
         }
@@ -569,23 +716,35 @@ fn run(cli: Cli) -> Result<i32> {
             match cmd {
                 SourceCmd::Verify => {
                     let res = sources::verify_integrity(&root)?;
-                    let bad = res.iter().any(|r| r.raw_ok == Some(false) || r.raw_ok.is_none());
+                    let bad = res
+                        .iter()
+                        .any(|r| r.raw_ok == Some(false) || r.raw_ok.is_none());
                     if json {
                         print_json(&res);
                     } else {
                         for r in &res {
-                            println!("{} {}", if r.message == "ok" { "ok   " } else { "FAIL " }, format!("{}: {}", r.id, r.message));
+                            println!(
+                                "{} {}",
+                                if r.message == "ok" { "ok   " } else { "FAIL " },
+                                format!("{}: {}", r.id, r.message)
+                            );
                         }
                         println!("{} sources checked", res.len());
                     }
                     Ok(if bad { 3 } else { 0 })
                 }
-                SourceCmd::AttachText { id, converter, fidelity } => {
+                SourceCmd::AttachText {
+                    id,
+                    converter,
+                    fidelity,
+                } => {
                     let rel = sources::attach_text(&root, &id, &converter, &fidelity)?;
                     if json {
                         print_json(&serde_json::json!({"id": id, "text": rel}));
                     } else {
-                        println!("attached {rel} to [[{id}]] (converter {converter}, fidelity {fidelity})");
+                        println!(
+                            "attached {rel} to [[{id}]] (converter {converter}, fidelity {fidelity})"
+                        );
                     }
                     Ok(0)
                 }
@@ -596,14 +755,24 @@ fn run(cli: Cli) -> Result<i32> {
                         print_json(&rows);
                     } else {
                         for r in &rows {
-                            println!("{:<12} {:<10} {:<8} {}", r["status"].as_str().unwrap_or(""), r["kind"].as_str().unwrap_or(""), r["fidelity"].as_str().unwrap_or(""), r["id"].as_str().unwrap_or(""));
+                            println!(
+                                "{:<12} {:<10} {:<8} {}",
+                                r["status"].as_str().unwrap_or(""),
+                                r["kind"].as_str().unwrap_or(""),
+                                r["fidelity"].as_str().unwrap_or(""),
+                                r["id"].as_str().unwrap_or("")
+                            );
                         }
                     }
                     Ok(0)
                 }
                 SourceCmd::Relink { id, all } => {
                     let ids: Vec<String> = if all {
-                        let mut v: Vec<String> = commonplace_core::manifest::Manifest::load(&root)?.sources.keys().cloned().collect();
+                        let mut v: Vec<String> = commonplace_core::manifest::Manifest::load(&root)?
+                            .sources
+                            .keys()
+                            .cloned()
+                            .collect();
                         v.sort();
                         v
                     } else {
@@ -620,21 +789,33 @@ fn run(cli: Cli) -> Result<i32> {
                             match &r.skipped {
                                 Some(s) => println!("skip  {}: {s}", r.id),
                                 None if r.links_rewritten == 0 => println!("clean {}", r.id),
-                                None => println!("ok    {}: {} links rewritten in {}", r.id, r.links_rewritten, r.files_changed.join(", ")),
+                                None => println!(
+                                    "ok    {}: {} links rewritten in {}",
+                                    r.id,
+                                    r.links_rewritten,
+                                    r.files_changed.join(", ")
+                                ),
                             }
                         }
                         let total: usize = reps.iter().map(|r| r.links_rewritten).sum();
-                        println!("{} sources, {} links rewritten; run `commonplace cite verify` to confirm quotes still match", reps.len(), total);
+                        println!(
+                            "{} sources, {} links rewritten; run `commonplace cite verify` to confirm quotes still match",
+                            reps.len(),
+                            total
+                        );
                     }
                     Ok(0)
                 }
                 SourceCmd::Show { id, text, at } => {
                     if text || at.is_some() {
-                        let tl = sources::load_text_layer(&root, &id)?.ok_or_else(|| anyhow!("no text layer for '{id}'"))?;
+                        let tl = sources::load_text_layer(&root, &id)?
+                            .ok_or_else(|| anyhow!("no text layer for '{id}'"))?;
                         match at {
                             Some(loc) => {
                                 let l = cite::parse_locator(&loc);
-                                let sp = cite::span(&tl.text, &l).ok_or_else(|| anyhow!("locator '{loc}' not found in the text layer"))?;
+                                let sp = cite::span(&tl.text, &l).ok_or_else(|| {
+                                    anyhow!("locator '{loc}' not found in the text layer")
+                                })?;
                                 for (ln, line) in sp {
                                     println!("{:>5} | {}", ln, line);
                                 }
@@ -643,16 +824,31 @@ fn run(cli: Cli) -> Result<i32> {
                         }
                     } else {
                         let p = root.join(sources::NOTES_DIR).join(format!("{id}.md"));
-                        print!("{}", std::fs::read_to_string(&p).map_err(|_| anyhow!("no source note at {}", p.display()))?);
+                        print!(
+                            "{}",
+                            std::fs::read_to_string(&p)
+                                .map_err(|_| anyhow!("no source note at {}", p.display()))?
+                        );
                     }
                     Ok(0)
                 }
             }
         }
-        Cmd::New { r#type, title, folder, set } => {
+        Cmd::New {
+            r#type,
+            title,
+            folder,
+            set,
+        } => {
             let root = find_root(&cli.root)?;
             let cfg = config::Config::load(&root)?;
-            let extra: Vec<(String, String)> = set.iter().filter_map(|s| s.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))).collect();
+            let extra: Vec<(String, String)> = set
+                .iter()
+                .filter_map(|s| {
+                    s.split_once('=')
+                        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+                })
+                .collect();
             let rep = scaffold::new_page(&root, &cfg, &r#type, &title, folder.as_deref(), &extra)?;
             if json {
                 print_json(&rep);
@@ -661,7 +857,13 @@ fn run(cli: Cli) -> Result<i32> {
             }
             Ok(0)
         }
-        Cmd::Lint { changed, rule, no_cite, fail_on, paths } => {
+        Cmd::Lint {
+            changed,
+            rule,
+            no_cite,
+            fail_on,
+            paths,
+        } => {
             let v = open(&cli.root)?;
             let packs = load_packs(&v)?;
             let only = paths_set(&paths, changed, &v.root)?;
@@ -673,7 +875,11 @@ fn run(cli: Cli) -> Result<i32> {
                 }
                 return Ok(0);
             }
-            let opts = lint::LintOptions { only, verify_citations: !no_cite, rules: if rule.is_empty() { None } else { Some(rule) } };
+            let opts = lint::LintOptions {
+                only,
+                verify_citations: !no_cite,
+                rules: if rule.is_empty() { None } else { Some(rule) },
+            };
             let rep = lint::lint(&v, &packs, &opts);
             let mut m = commonplace_core::manifest::Manifest::load(&v.root)?;
             m.last_lint = Some(commonplace_core::fsutil::now_iso());
@@ -681,9 +887,19 @@ fn run(cli: Cli) -> Result<i32> {
             if json {
                 print_json(&rep);
             } else {
-                println!("lint: {} pages — {} errors, {} warnings, {} info", rep.pages_checked, rep.errors, rep.warnings, rep.infos);
+                println!(
+                    "lint: {} pages — {} errors, {} warnings, {} info",
+                    rep.pages_checked, rep.errors, rep.warnings, rep.infos
+                );
                 for f in &rep.findings {
-                    println!("  [{:<7}] {:<9} {}{}: {}", format!("{:?}", f.severity).to_lowercase(), f.rule, f.path, f.line.map(|l| format!(":{l}")).unwrap_or_default(), f.message);
+                    println!(
+                        "  [{:<7}] {:<9} {}{}: {}",
+                        format!("{:?}", f.severity).to_lowercase(),
+                        f.rule,
+                        f.path,
+                        f.line.map(|l| format!(":{l}")).unwrap_or_default(),
+                        f.message
+                    );
                 }
             }
             let fail = match fail_on.as_str() {
@@ -698,25 +914,46 @@ fn run(cli: Cli) -> Result<i32> {
                 CiteCmd::Verify { changed, paths } => {
                     let only = paths_set(&paths, changed, &v.root)?;
                     let res = lint::verify_all_citations(&v, only.as_ref());
-                    let fails = res.iter().filter(|r| matches!(r.verdict, cite::Verdict::QuoteNotFound | cite::Verdict::QuoteNotInSpan | cite::Verdict::SourceMissing)).count();
+                    let fails = res
+                        .iter()
+                        .filter(|r| {
+                            matches!(
+                                r.verdict,
+                                cite::Verdict::QuoteNotFound
+                                    | cite::Verdict::QuoteNotInSpan
+                                    | cite::Verdict::SourceMissing
+                            )
+                        })
+                        .count();
                     if json {
                         print_json(&res);
                     } else {
                         for r in &res {
                             let tag = match r.verdict {
                                 cite::Verdict::Pass => "PASS ",
-                                cite::Verdict::QuoteNotFound | cite::Verdict::QuoteNotInSpan | cite::Verdict::SourceMissing => "FAIL ",
+                                cite::Verdict::QuoteNotFound
+                                | cite::Verdict::QuoteNotInSpan
+                                | cite::Verdict::SourceMissing => "FAIL ",
                                 _ => "WARN ",
                             };
-                            println!("{tag} {}:{} [^{}] → [[{}]] {} — {}", r.page, r.line, r.label, r.source, r.locator, r.message);
+                            println!(
+                                "{tag} {}:{} [^{}] → [[{}]] {} — {}",
+                                r.page, r.line, r.label, r.source, r.locator, r.message
+                            );
                         }
                         println!("{} citations, {} failed", res.len(), fails);
                     }
                     Ok(if fails > 0 { 1 } else { 0 })
                 }
                 CiteCmd::Find { source, quote } => {
-                    let tl = sources::load_text_layer(&v.root, &source)?.ok_or_else(|| anyhow!("no text layer for '{source}'"))?;
-                    let lines: Vec<(usize, &str)> = tl.text.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
+                    let tl = sources::load_text_layer(&v.root, &source)?
+                        .ok_or_else(|| anyhow!("no text layer for '{source}'"))?;
+                    let lines: Vec<(usize, &str)> = tl
+                        .text
+                        .lines()
+                        .enumerate()
+                        .map(|(i, l)| (i + 1, l))
+                        .collect();
                     let hay = cite::Haystack::new(&lines);
                     match hay.verify(&quote) {
                         Some(l) => {
@@ -727,27 +964,54 @@ fn run(cli: Cli) -> Result<i32> {
                                 if *ln > l {
                                     break;
                                 }
-                                if let Some(c) = regex::Regex::new(r"<!--\s*page:\s*(\d+)\s*-->").unwrap().captures(line) {
+                                if let Some(c) = regex::Regex::new(r"<!--\s*page:\s*(\d+)\s*-->")
+                                    .unwrap()
+                                    .captures(line)
+                                {
                                     page = Some(c[1].to_string());
                                 }
-                                if let Some(c) = regex::Regex::new(r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)").unwrap().captures(line) {
+                                if let Some(c) = regex::Regex::new(
+                                    r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)",
+                                )
+                                .unwrap()
+                                .captures(line)
+                                {
                                     para = c.get(1).or(c.get(2)).map(|m| m.as_str().to_string());
                                 }
                             }
-                            let loc = if let Some(p) = &para { format!("para {p}") } else if let Some(p) = &page { format!("p.{p}") } else { tl.locate(l) };
-                            if json {
-                                print_json(&serde_json::json!({"found": true, "line": l, "where": tl.locate(l), "page": page, "para": para, "locator": loc}));
+                            let loc = if let Some(p) = &para {
+                                format!("para {p}")
+                            } else if let Some(p) = &page {
+                                format!("p.{p}")
                             } else {
-                                println!("found at {} → use locator: {loc}\n[^n]: [[{source}]] {loc} \"{quote}\"", tl.locate(l));
+                                tl.locate(l)
+                            };
+                            if json {
+                                print_json(
+                                    &serde_json::json!({"found": true, "line": l, "where": tl.locate(l), "page": page, "para": para, "locator": loc}),
+                                );
+                            } else {
+                                println!(
+                                    "found at {} → use locator: {loc}\n[^n]: [[{source}]] {loc} \"{quote}\"",
+                                    tl.locate(l)
+                                );
                             }
                             Ok(0)
                         }
                         None => {
                             let near = hay.nearest_lines(&quote, 5);
                             if json {
-                                print_json(&serde_json::json!({"found": false, "nearest_lines": near}));
+                                print_json(
+                                    &serde_json::json!({"found": false, "nearest_lines": near}),
+                                );
                             } else {
-                                println!("not found verbatim. Nearest lines: {}", near.iter().map(|l| format!("L{l}")).collect::<Vec<_>>().join(", "));
+                                println!(
+                                    "not found verbatim. Nearest lines: {}",
+                                    near.iter()
+                                        .map(|l| format!("L{l}"))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                );
                                 for l in near.iter().take(3) {
                                     if let Some((_, line)) = lines.get(l - 1) {
                                         println!("  L{l}: {}", line.trim());
@@ -769,7 +1033,24 @@ fn run(cli: Cli) -> Result<i32> {
                         print_json(&issues);
                     } else {
                         for i in &issues {
-                            println!("{}{}: [[{}]]{}", i.page, i.line.map(|l| format!(":{l}")).unwrap_or_default(), i.target, if i.suggestions.is_empty() { String::new() } else { format!(" → did you mean {}?", i.suggestions.iter().map(|s| format!("[[{s}]]")).collect::<Vec<_>>().join(", ")) });
+                            println!(
+                                "{}{}: [[{}]]{}",
+                                i.page,
+                                i.line.map(|l| format!(":{l}")).unwrap_or_default(),
+                                i.target,
+                                if i.suggestions.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(
+                                        " → did you mean {}?",
+                                        i.suggestions
+                                            .iter()
+                                            .map(|s| format!("[[{s}]]"))
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    )
+                                }
+                            );
                         }
                         println!("{} broken links", issues.len());
                     }
@@ -798,7 +1079,10 @@ fn run(cli: Cli) -> Result<i32> {
                 for c in &d {
                     println!("{:.2}  {}  ~  {}  ({})", c.similarity, c.a, c.b, c.reason);
                 }
-                println!("{} candidate pairs (judge them; merge with `commonplace rename` + edits, never automatically)", d.len());
+                println!(
+                    "{} candidate pairs (judge them; merge with `commonplace rename` + edits, never automatically)",
+                    d.len()
+                );
             }
             Ok(0)
         }
@@ -811,19 +1095,52 @@ fn run(cli: Cli) -> Result<i32> {
             if json {
                 print_json(&rep);
             } else {
-                println!("index.md regenerated ({} lines); hubs: {}; page lists refreshed in {} pages", rep.index_lines, if rep.hubs.is_empty() { "none".into() } else { rep.hubs.join(", ") }, rep.mocs_updated.len());
+                println!(
+                    "index.md regenerated ({} lines); hubs: {}; page lists refreshed in {} pages",
+                    rep.index_lines,
+                    if rep.hubs.is_empty() {
+                        "none".into()
+                    } else {
+                        rep.hubs.join(", ")
+                    },
+                    rep.mocs_updated.len()
+                );
             }
             Ok(0)
         }
-        Cmd::Search { query, scope, include_archive, text, ptype, limit } => {
+        Cmd::Search {
+            query,
+            scope,
+            include_archive,
+            text,
+            ptype,
+            limit,
+        } => {
             let v = open(&cli.root)?;
             let q = query.join(" ");
-            let hits = search::search(&v, &q, &search::SearchOptions { scope, include_archive, include_text_layer: text, ptype, limit });
+            let hits = search::search(
+                &v,
+                &q,
+                &search::SearchOptions {
+                    scope,
+                    include_archive,
+                    include_text_layer: text,
+                    ptype,
+                    limit,
+                },
+            );
             if json {
                 print_json(&hits);
             } else {
                 for h in &hits {
-                    println!("{:>6.2}  {} [{}]{}\n        {}", h.score, h.rel, h.ptype, h.line.map(|l| format!(" L{l}")).unwrap_or_default(), h.snippet);
+                    println!(
+                        "{:>6.2}  {} [{}]{}\n        {}",
+                        h.score,
+                        h.rel,
+                        h.ptype,
+                        h.line.map(|l| format!(" L{l}")).unwrap_or_default(),
+                        h.snippet
+                    );
                 }
                 if hits.is_empty() {
                     println!("no hits");
@@ -831,22 +1148,48 @@ fn run(cli: Cli) -> Result<i32> {
             }
             Ok(0)
         }
-        Cmd::Query { r#where, fields, format, scope, include_archive } => {
+        Cmd::Query {
+            r#where,
+            fields,
+            format,
+            scope,
+            include_archive,
+        } => {
             let v = open(&cli.root)?;
             let expr = commonplace_core::query::parse(&r#where)?;
-            let pages: Vec<&commonplace_core::vault::Page> = v.pages.iter().filter(|p| (include_archive || !p.is_archived()) && scope.as_ref().map(|s| p.rel.starts_with(s.trim_end_matches('/'))).unwrap_or(true) && commonplace_core::query::eval(&expr, p)).collect();
-            let fields: Vec<String> = if fields.is_empty() { vec!["type".into(), "status".into(), "description".into()] } else { fields };
+            let pages: Vec<&commonplace_core::vault::Page> = v
+                .pages
+                .iter()
+                .filter(|p| {
+                    (include_archive || !p.is_archived())
+                        && scope
+                            .as_ref()
+                            .map(|s| p.rel.starts_with(s.trim_end_matches('/')))
+                            .unwrap_or(true)
+                        && commonplace_core::query::eval(&expr, p)
+                })
+                .collect();
+            let fields: Vec<String> = if fields.is_empty() {
+                vec!["type".into(), "status".into(), "description".into()]
+            } else {
+                fields
+            };
             if json || format == "json" {
-                let rows: Vec<serde_json::Value> = pages.iter().map(|p| {
-                    let mut m = serde_json::Map::new();
-                    m.insert("page".into(), serde_json::Value::String(p.stem.clone()));
-                    m.insert("path".into(), serde_json::Value::String(p.rel.clone()));
-                    for f in &fields {
-                        let val = commonplace_core::query::field_value(p, f).map(|x| commonplace_core::frontmatter::scalar_to_string(&x)).unwrap_or_default();
-                        m.insert(f.clone(), serde_json::Value::String(val));
-                    }
-                    serde_json::Value::Object(m)
-                }).collect();
+                let rows: Vec<serde_json::Value> = pages
+                    .iter()
+                    .map(|p| {
+                        let mut m = serde_json::Map::new();
+                        m.insert("page".into(), serde_json::Value::String(p.stem.clone()));
+                        m.insert("path".into(), serde_json::Value::String(p.rel.clone()));
+                        for f in &fields {
+                            let val = commonplace_core::query::field_value(p, f)
+                                .map(|x| commonplace_core::frontmatter::scalar_to_string(&x))
+                                .unwrap_or_default();
+                            m.insert(f.clone(), serde_json::Value::String(val));
+                        }
+                        serde_json::Value::Object(m)
+                    })
+                    .collect();
                 print_json(&rows);
             } else if format == "list" {
                 for p in &pages {
@@ -856,7 +1199,15 @@ fn run(cli: Cli) -> Result<i32> {
                 println!("| page | {} |", fields.join(" | "));
                 println!("|---|{}", "---|".repeat(fields.len()));
                 for p in &pages {
-                    let cells: Vec<String> = fields.iter().map(|f| commonplace_core::query::field_value(p, f).map(|x| commonplace_core::frontmatter::scalar_to_string(&x)).unwrap_or_default().replace('|', "\\|")).collect();
+                    let cells: Vec<String> = fields
+                        .iter()
+                        .map(|f| {
+                            commonplace_core::query::field_value(p, f)
+                                .map(|x| commonplace_core::frontmatter::scalar_to_string(&x))
+                                .unwrap_or_default()
+                                .replace('|', "\\|")
+                        })
+                        .collect();
                     println!("| [[{}]] | {} |", p.stem, cells.join(" | "));
                 }
                 eprintln!("{} pages", pages.len());
@@ -866,25 +1217,65 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Review { cmd } => {
             let v = open(&cli.root)?;
             match cmd {
-                ReviewCmd::Prepare { persona, targets, out } => {
-                    let text = scaffold::persona_text(&v.root, skill_dir().as_deref(), &v.config, &persona)?;
-                    let packet = ops::review_packet(&v, &text, &persona, &targets, v.config.review.context_lines)?;
-                    let out = out.unwrap_or_else(|| commonplace_core::vault::tool_dir(&v.root).join("reviews").join(format!("{} {} {} packet.md", commonplace_core::fsutil::today(), persona, commonplace_core::fsutil::slug(&targets.join(" "), 40))));
+                ReviewCmd::Prepare {
+                    persona,
+                    targets,
+                    out,
+                } => {
+                    let text = scaffold::persona_text(
+                        &v.root,
+                        skill_dir().as_deref(),
+                        &v.config,
+                        &persona,
+                    )?;
+                    let packet = ops::review_packet(
+                        &v,
+                        &text,
+                        &persona,
+                        &targets,
+                        v.config.review.context_lines,
+                    )?;
+                    let out = out.unwrap_or_else(|| {
+                        commonplace_core::vault::tool_dir(&v.root)
+                            .join("reviews")
+                            .join(format!(
+                                "{} {} {} packet.md",
+                                commonplace_core::fsutil::today(),
+                                persona,
+                                commonplace_core::fsutil::slug(&targets.join(" "), 40)
+                            ))
+                    });
                     commonplace_core::fsutil::write_atomic(&out, packet.as_bytes())?;
                     if json {
-                        print_json(&serde_json::json!({"packet": out.display().to_string(), "persona": persona, "pages": targets}));
+                        print_json(
+                            &serde_json::json!({"packet": out.display().to_string(), "persona": persona, "pages": targets}),
+                        );
                     } else {
-                        println!("packet written to {}\nGive it to a fresh-context subagent (ideally another model). It must return a JSON array of findings; then run:\n  commonplace review record {persona} <findings.json> --scope \"{}\"", out.display(), targets.join(","));
+                        println!(
+                            "packet written to {}\nGive it to a fresh-context subagent (ideally another model). It must return a JSON array of findings; then run:\n  commonplace review record {persona} <findings.json> --scope \"{}\"",
+                            out.display(),
+                            targets.join(",")
+                        );
                     }
                     Ok(0)
                 }
-                ReviewCmd::Record { persona, findings, scope, model } => {
+                ReviewCmd::Record {
+                    persona,
+                    findings,
+                    scope,
+                    model,
+                } => {
                     let fj = std::fs::read_to_string(&findings)?;
                     let rep = ops::review_record(&v, &persona, &fj, &scope, model.as_deref())?;
                     if json {
                         print_json(&rep);
                     } else {
-                        println!("recorded {} finding(s) ({} blockers) on {} page(s); see reviews/", rep.findings, rep.blockers, rep.pages_updated.len());
+                        println!(
+                            "recorded {} finding(s) ({} blockers) on {} page(s); see reviews/",
+                            rep.findings,
+                            rep.blockers,
+                            rep.pages_updated.len()
+                        );
                     }
                     Ok(if rep.blockers > 0 { 1 } else { 0 })
                 }
@@ -896,7 +1287,13 @@ fn run(cli: Cli) -> Result<i32> {
             if json {
                 print_json(&rep);
             } else {
-                println!("renamed {} → {} ({} links rewritten in {} files; old name kept as alias)", rep.from, rep.to, rep.links_rewritten, rep.files_updated.len());
+                println!(
+                    "renamed {} → {} ({} links rewritten in {} files; old name kept as alias)",
+                    rep.from,
+                    rep.to,
+                    rep.links_rewritten,
+                    rep.files_updated.len()
+                );
             }
             Ok(0)
         }
@@ -906,11 +1303,18 @@ fn run(cli: Cli) -> Result<i32> {
             if json {
                 print_json(&moved);
             } else {
-                println!("archived {} file(s). Promote any reusable concepts to resources/ and run `commonplace index`.", moved.len());
+                println!(
+                    "archived {} file(s). Promote any reusable concepts to resources/ and run `commonplace index`.",
+                    moved.len()
+                );
             }
             Ok(0)
         }
-        Cmd::Export { targets, out, include_confidential } => {
+        Cmd::Export {
+            targets,
+            out,
+            include_confidential,
+        } => {
             let v = open(&cli.root)?;
             let text = ops::export(&v, &targets, include_confidential)?;
             match out {
@@ -924,16 +1328,34 @@ fn run(cli: Cli) -> Result<i32> {
             }
             Ok(0)
         }
-        Cmd::Trace { chain, name, format } => {
+        Cmd::Trace {
+            chain,
+            name,
+            format,
+        } => {
             let v = open(&cli.root)?;
             let packs = load_packs(&v)?;
             let chain: Vec<String> = match name {
-                Some(n) => ops::pack_trace(&packs, &n).ok_or_else(|| anyhow!("no pack trace named '{n}' (available: {})", packs.iter().flat_map(|p| p.traces.iter().map(|t| t.name.clone())).collect::<Vec<_>>().join(", ")))?.chain.clone(),
+                Some(n) => ops::pack_trace(&packs, &n)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "no pack trace named '{n}' (available: {})",
+                            packs
+                                .iter()
+                                .flat_map(|p| p.traces.iter().map(|t| t.name.clone()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    })?
+                    .chain
+                    .clone(),
                 None => chain,
             };
             let (header, rows) = ops::trace(&v, &chain)?;
             if json || format == "json" {
-                print_json(&serde_json::json!({"columns": header, "rows": rows.iter().map(|r| r.cells.clone()).collect::<Vec<_>>()}));
+                print_json(
+                    &serde_json::json!({"columns": header, "rows": rows.iter().map(|r| r.cells.clone()).collect::<Vec<_>>()}),
+                );
             } else if format == "csv" {
                 println!("{}", header.join(","));
                 for r in rows {
@@ -942,9 +1364,23 @@ fn run(cli: Cli) -> Result<i32> {
             } else {
                 println!("| {} |", header.join(" | "));
                 println!("|{}", "---|".repeat(header.len()));
-                let gaps = rows.iter().filter(|r| r.cells.contains(&"—".to_string())).count();
+                let gaps = rows
+                    .iter()
+                    .filter(|r| r.cells.contains(&"—".to_string()))
+                    .count();
                 for r in &rows {
-                    println!("| {} |", r.cells.iter().map(|c| if c == "—" { c.clone() } else { format!("[[{c}]]") }).collect::<Vec<_>>().join(" | "));
+                    println!(
+                        "| {} |",
+                        r.cells
+                            .iter()
+                            .map(|c| if c == "—" {
+                                c.clone()
+                            } else {
+                                format!("[[{c}]]")
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    );
                 }
                 eprintln!("{} rows, {} with gaps", rows.len(), gaps);
             }
@@ -956,7 +1392,12 @@ fn run(cli: Cli) -> Result<i32> {
                 LogCmd::Add { op, title, notes } => {
                     ops::log_append(&root, &op, &title, &notes)?;
                     if !json {
-                        println!("logged: [{}] {} | {}", commonplace_core::fsutil::today(), op, title);
+                        println!(
+                            "logged: [{}] {} | {}",
+                            commonplace_core::fsutil::today(),
+                            op,
+                            title
+                        );
                     }
                     Ok(0)
                 }
@@ -986,10 +1427,29 @@ fn run(cli: Cli) -> Result<i32> {
                     if json {
                         print_json(&st);
                     } else {
-                        println!("{} nodes, {} edges, {} components (largest: {:?})", st.nodes, st.edges, st.components, st.largest_components);
-                        println!("hubs: {}", st.hubs.iter().map(|(n, d)| format!("{n} ({d})")).collect::<Vec<_>>().join(", "));
+                        println!(
+                            "{} nodes, {} edges, {} components (largest: {:?})",
+                            st.nodes, st.edges, st.components, st.largest_components
+                        );
+                        println!(
+                            "hubs: {}",
+                            st.hubs
+                                .iter()
+                                .map(|(n, d)| format!("{n} ({d})"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
                         if !st.isolated.is_empty() {
-                            println!("isolated ({}): {}", st.isolated.len(), st.isolated.iter().take(20).cloned().collect::<Vec<_>>().join(", "));
+                            println!(
+                                "isolated ({}): {}",
+                                st.isolated.len(),
+                                st.isolated
+                                    .iter()
+                                    .take(20)
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
                         }
                     }
                     Ok(0)
@@ -1014,7 +1474,13 @@ fn run(cli: Cli) -> Result<i32> {
                     }
                     Ok(0)
                 }
-                GraphCmd::Walk { page, depth, rel, direction, mentions } => {
+                GraphCmd::Walk {
+                    page,
+                    depth,
+                    rel,
+                    direction,
+                    mentions,
+                } => {
                     let g = commonplace_core::graph::build(&v, mentions);
                     if g.node(&page).is_none() {
                         return Err(anyhow!("no page named '{page}'"));
@@ -1024,13 +1490,32 @@ fn run(cli: Cli) -> Result<i32> {
                         print_json(&rows);
                     } else {
                         for r in &rows {
-                            println!("{} [[{}]] ({}) via {}{}", "  ".repeat(r.depth - 1), r.node, r.label, r.path, if r.description.is_empty() { String::new() } else { format!(" — {}", r.description) });
+                            println!(
+                                "{} [[{}]] ({}) via {}{}",
+                                "  ".repeat(r.depth - 1),
+                                r.node,
+                                r.label,
+                                r.path,
+                                if r.description.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" — {}", r.description)
+                                }
+                            );
                         }
                         println!("{} nodes within {} hops", rows.len(), depth);
                     }
                     Ok(0)
                 }
-                GraphCmd::Path { from, to, max_depth, rel, direction, limit, mentions } => {
+                GraphCmd::Path {
+                    from,
+                    to,
+                    max_depth,
+                    rel,
+                    direction,
+                    limit,
+                    mentions,
+                } => {
                     let g = commonplace_core::graph::build(&v, mentions);
                     for p in [&from, &to] {
                         if g.node(p).is_none() {
@@ -1042,17 +1527,39 @@ fn run(cli: Cli) -> Result<i32> {
                         print_json(&paths);
                     } else {
                         for p in &paths {
-                            println!("{}", p.iter().map(|x| if x.starts_with('-') || x.starts_with('<') { x.clone() } else { format!("[[{x}]]") }).collect::<Vec<_>>().join(" "));
+                            println!(
+                                "{}",
+                                p.iter()
+                                    .map(|x| if x.starts_with('-') || x.starts_with('<') {
+                                        x.clone()
+                                    } else {
+                                        format!("[[{x}]]")
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            );
                         }
                         if paths.is_empty() {
-                            println!("no path within {max_depth} hops{}", if mentions { String::new() } else { " (try --mentions to include plain wikilinks)".into() });
+                            println!(
+                                "no path within {max_depth} hops{}",
+                                if mentions {
+                                    String::new()
+                                } else {
+                                    " (try --mentions to include plain wikilinks)".into()
+                                }
+                            );
                         }
                     }
                     Ok(if paths.is_empty() { 1 } else { 0 })
                 }
-                GraphCmd::Related { page, limit, typed_only } => {
+                GraphCmd::Related {
+                    page,
+                    limit,
+                    typed_only,
+                } => {
                     let g = commonplace_core::graph::build(&v, !typed_only);
-                    let rows = commonplace_core::analysis::related(&g, &v, &page, limit).ok_or_else(|| anyhow!("no page named '{page}'"))?;
+                    let rows = commonplace_core::analysis::related(&g, &v, &page, limit)
+                        .ok_or_else(|| anyhow!("no page named '{page}'"))?;
                     if json {
                         print_json(&rows);
                     } else {
@@ -1074,20 +1581,44 @@ fn run(cli: Cli) -> Result<i32> {
                     } else {
                         println!("{:<8} {:<6} {:<8} page", "pagerank", "degree", "between");
                         for r in &rows {
-                            println!("{:<8.4} {:<6} {:<8} [[{}]] ({})", r.pagerank, r.degree, r.betweenness, r.node, r.label);
+                            println!(
+                                "{:<8.4} {:<6} {:<8} [[{}]] ({})",
+                                r.pagerank, r.degree, r.betweenness, r.node, r.label
+                            );
                         }
                     }
                     Ok(0)
                 }
-                GraphCmd::Communities { min_size, typed_only } => {
+                GraphCmd::Communities {
+                    min_size,
+                    typed_only,
+                } => {
                     let g = commonplace_core::graph::build(&v, !typed_only);
                     let rows = commonplace_core::analysis::communities(&g, min_size);
                     if json {
                         print_json(&rows);
                     } else {
                         for c in &rows {
-                            println!("community {} ({} pages; {}; {} sources cited; hub: {})", c.id, c.size, c.types.iter().map(|(t, n)| format!("{n} {t}")).collect::<Vec<_>>().join(", "), c.sources_cited, c.hub.clone().unwrap_or_else(|| "NONE".into()));
-                            println!("    {}", c.members.iter().map(|m| format!("[[{m}]]")).collect::<Vec<_>>().join(", "));
+                            println!(
+                                "community {} ({} pages; {}; {} sources cited; hub: {})",
+                                c.id,
+                                c.size,
+                                c.types
+                                    .iter()
+                                    .map(|(t, n)| format!("{n} {t}"))
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
+                                c.sources_cited,
+                                c.hub.clone().unwrap_or_else(|| "NONE".into())
+                            );
+                            println!(
+                                "    {}",
+                                c.members
+                                    .iter()
+                                    .map(|m| format!("[[{m}]]"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
                         }
                         println!("{} communities of {}+ pages", rows.len(), min_size);
                     }
@@ -1110,22 +1641,61 @@ fn run(cli: Cli) -> Result<i32> {
                         if !gp.wanted.is_empty() {
                             println!("Wanted pages (linked but missing) ({}):", gp.wanted.len());
                             for w in gp.wanted.iter().take(30) {
-                                println!("  [[{}]] wanted by {} page{}: {}{}", w.target, w.referrers.len(), if w.referrers.len() == 1 { "" } else { "s" }, w.referrers.iter().take(4).cloned().collect::<Vec<_>>().join(", "), w.suggestion.as_ref().map(|s| format!("  (did you mean [[{s}]]?)")).unwrap_or_default());
+                                println!(
+                                    "  [[{}]] wanted by {} page{}: {}{}",
+                                    w.target,
+                                    w.referrers.len(),
+                                    if w.referrers.len() == 1 { "" } else { "s" },
+                                    w.referrers
+                                        .iter()
+                                        .take(4)
+                                        .cloned()
+                                        .collect::<Vec<_>>()
+                                        .join(", "),
+                                    w.suggestion
+                                        .as_ref()
+                                        .map(|s| format!("  (did you mean [[{s}]]?)"))
+                                        .unwrap_or_default()
+                                );
                             }
                         }
                         list("Orphans (no inbound links)", &gp.orphans);
                         list("Dead ends (no outbound links)", &gp.dead_ends);
                         list("Sources no page cites", &gp.uncited_sources);
                         if !gp.communities_without_hub.is_empty() {
-                            println!("Clusters without a topic/project/area page ({}):", gp.communities_without_hub.len());
+                            println!(
+                                "Clusters without a topic/project/area page ({}):",
+                                gp.communities_without_hub.len()
+                            );
                             for c in &gp.communities_without_hub {
-                                println!("  {} pages: {}", c.size, c.members.iter().map(|m| format!("[[{m}]]")).collect::<Vec<_>>().join(", "));
+                                println!(
+                                    "  {} pages: {}",
+                                    c.size,
+                                    c.members
+                                        .iter()
+                                        .map(|m| format!("[[{m}]]"))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                );
                             }
                         }
                         if !gp.single_source_communities.is_empty() {
-                            println!("Clusters resting on one source or none ({}):", gp.single_source_communities.len());
+                            println!(
+                                "Clusters resting on one source or none ({}):",
+                                gp.single_source_communities.len()
+                            );
                             for c in &gp.single_source_communities {
-                                println!("  {} pages, {} source(s): {}", c.size, c.sources_cited, c.members.iter().take(5).map(|m| format!("[[{m}]]")).collect::<Vec<_>>().join(", "));
+                                println!(
+                                    "  {} pages, {} source(s): {}",
+                                    c.size,
+                                    c.sources_cited,
+                                    c.members
+                                        .iter()
+                                        .take(5)
+                                        .map(|m| format!("[[{m}]]"))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                );
                             }
                         }
                         if !gp.bridges.is_empty() {
@@ -1134,19 +1704,28 @@ fn run(cli: Cli) -> Result<i32> {
                                 println!("  [[{}]] betweenness {}", b.node, b.betweenness);
                             }
                         }
-                        let total = gp.wanted.len() + gp.orphans.len() + gp.dead_ends.len() + gp.uncited_sources.len() + gp.communities_without_hub.len() + gp.single_source_communities.len();
+                        let total = gp.wanted.len()
+                            + gp.orphans.len()
+                            + gp.dead_ends.len()
+                            + gp.uncited_sources.len()
+                            + gp.communities_without_hub.len()
+                            + gp.single_source_communities.len();
                         println!("{total} gap items");
                     }
                     Ok(0)
                 }
                 GraphCmd::SuggestLinks { page, limit } => {
                     let g = commonplace_core::graph::build(&v, true);
-                    let rows = commonplace_core::analysis::suggest_links(&g, &v, page.as_deref(), limit);
+                    let rows =
+                        commonplace_core::analysis::suggest_links(&g, &v, page.as_deref(), limit);
                     if json {
                         print_json(&rows);
                     } else {
                         for r in &rows {
-                            println!("{}:{}  \"{}\" → [[{}]]", r.path, r.line, r.matched, r.target);
+                            println!(
+                                "{}:{}  \"{}\" → [[{}]]",
+                                r.path, r.line, r.matched, r.target
+                            );
                             println!("    {}", r.context);
                         }
                         println!("{} unlinked mentions", rows.len());
@@ -1162,11 +1741,20 @@ fn run(cli: Cli) -> Result<i32> {
                             println!("{:>5.2}  [[{}]] vs [[{}]] ({})", r.score, r.a, r.b, r.ptype);
                             println!("         {}", r.reasons.join("; "));
                         }
-                        println!("{} candidate pairs (the tool nominates; you judge)", rows.len());
+                        println!(
+                            "{} candidate pairs (the tool nominates; you judge)",
+                            rows.len()
+                        );
                     }
                     Ok(0)
                 }
-                GraphCmd::Export { format, out, mentions, around, depth } => {
+                GraphCmd::Export {
+                    format,
+                    out,
+                    mentions,
+                    around,
+                    depth,
+                } => {
                     let g = commonplace_core::graph::build(&v, mentions);
                     let text = match format.as_str() {
                         "cypher" => g.to_cypher(),
@@ -1175,19 +1763,32 @@ fn run(cli: Cli) -> Result<i32> {
                         "json" => serde_json::to_string_pretty(&g)?,
                         "mermaid" => {
                             let ids = around.as_ref().map(|a| {
-                                let mut set: HashSet<String> = g.walk(a, depth, &[], "both").into_iter().map(|r| r.node.to_lowercase()).collect();
+                                let mut set: HashSet<String> = g
+                                    .walk(a, depth, &[], "both")
+                                    .into_iter()
+                                    .map(|r| r.node.to_lowercase())
+                                    .collect();
                                 set.insert(a.to_lowercase());
                                 set
                             });
                             g.to_mermaid(ids.as_ref())
                         }
-                        other => return Err(anyhow!("unknown format '{other}' (cypher|graphml|mermaid|dot|json)")),
+                        other => {
+                            return Err(anyhow!(
+                                "unknown format '{other}' (cypher|graphml|mermaid|dot|json)"
+                            ));
+                        }
                     };
                     match out {
                         Some(o) => {
                             commonplace_core::fsutil::write_atomic(&o, text.as_bytes())?;
                             if !json {
-                                println!("wrote {} ({} nodes, {} edges)", o.display(), g.nodes.len(), g.edges.len());
+                                println!(
+                                    "wrote {} ({} nodes, {} edges)",
+                                    o.display(),
+                                    g.nodes.len(),
+                                    g.edges.len()
+                                );
                             }
                         }
                         None => print!("{text}"),
@@ -1199,11 +1800,36 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Pack { cmd } => match cmd {
             PackCmd::List => {
                 let root = find_root(&cli.root).ok();
-                let enabled = root.as_ref().and_then(|r| config::Config::load(r).ok()).map(|c| c.packs).unwrap_or_default();
-                let jur = root.as_ref().and_then(|r| config::Config::load(r).ok()).map(|c| c.jurisdiction).unwrap_or_default();
+                let enabled = root
+                    .as_ref()
+                    .and_then(|r| config::Config::load(r).ok())
+                    .map(|c| c.packs)
+                    .unwrap_or_default();
+                let jur = root
+                    .as_ref()
+                    .and_then(|r| config::Config::load(r).ok())
+                    .map(|c| c.jurisdiction)
+                    .unwrap_or_default();
                 for p in scaffold::known_packs() {
-                    let extra = if p == "legal" { format!("  (jurisdictions: {}; current: {})", scaffold::known_jurisdictions("legal").join(", "), if jur.is_empty() { "generic" } else { jur.as_str() }) } else { String::new() };
-                    println!("{} {}{}", if enabled.contains(&p) { "[x]" } else { "[ ]" }, p, extra);
+                    let extra = if p == "legal" {
+                        format!(
+                            "  (jurisdictions: {}; current: {})",
+                            scaffold::known_jurisdictions("legal").join(", "),
+                            if jur.is_empty() {
+                                "generic"
+                            } else {
+                                jur.as_str()
+                            }
+                        )
+                    } else {
+                        String::new()
+                    };
+                    println!(
+                        "{} {}{}",
+                        if enabled.contains(&p) { "[x]" } else { "[ ]" },
+                        p,
+                        extra
+                    );
                 }
                 Ok(0)
             }
@@ -1212,7 +1838,10 @@ fn run(cli: Cli) -> Result<i32> {
                 let mut cfg = config::Config::load(&root)?;
                 let (name, alias_jur) = scaffold::normalise_pack(&name);
                 if !scaffold::known_packs().contains(&name) {
-                    return Err(anyhow!("unknown pack '{name}'; known: {}", scaffold::known_packs().join(", ")));
+                    return Err(anyhow!(
+                        "unknown pack '{name}'; known: {}",
+                        scaffold::known_packs().join(", ")
+                    ));
                 }
                 scaffold::install_pack(&root, &name)?;
                 if !cfg.packs.contains(&name) {
@@ -1220,21 +1849,41 @@ fn run(cli: Cli) -> Result<i32> {
                 }
                 if let Some(j) = jurisdiction.as_deref().or(alias_jur) {
                     let known = scaffold::known_jurisdictions("legal");
-                    if !known.iter().any(|k| k == j) && !commonplace_core::vault::tool_dir(&root).join("packs/legal/jurisdictions").join(format!("{j}.yaml")).is_file() {
-                        return Err(anyhow!("unknown jurisdiction '{j}'; shipped profiles: {} (or add .commonplace/packs/legal/jurisdictions/{j}.yaml)", known.join(", ")));
+                    if !known.iter().any(|k| k == j)
+                        && !commonplace_core::vault::tool_dir(&root)
+                            .join("packs/legal/jurisdictions")
+                            .join(format!("{j}.yaml"))
+                            .is_file()
+                    {
+                        return Err(anyhow!(
+                            "unknown jurisdiction '{j}'; shipped profiles: {} (or add .commonplace/packs/legal/jurisdictions/{j}.yaml)",
+                            known.join(", ")
+                        ));
                     }
                     cfg.jurisdiction = j.to_string();
                 }
                 cfg.save(&root)?;
                 // prove the pack loads with this jurisdiction
-                pack::load_packs(&commonplace_core::vault::tool_dir(&root).join("packs"), std::slice::from_ref(&name), &cfg.jurisdiction)?;
+                pack::load_packs(
+                    &commonplace_core::vault::tool_dir(&root).join("packs"),
+                    std::slice::from_ref(&name),
+                    &cfg.jurisdiction,
+                )?;
                 if !json {
-                    println!("pack '{name}' installed and enabled; read its workflow in the skill's packs/{name}/ folder");
+                    println!(
+                        "pack '{name}' installed and enabled; read its workflow in the skill's packs/{name}/ folder"
+                    );
                     if name == "legal" {
                         if cfg.jurisdiction.is_empty() {
-                            println!("no jurisdiction set: generic citation patterns apply. Set one with `commonplace pack install legal --jurisdiction {}`", scaffold::known_jurisdictions("legal").join("|"));
+                            println!(
+                                "no jurisdiction set: generic citation patterns apply. Set one with `commonplace pack install legal --jurisdiction {}`",
+                                scaffold::known_jurisdictions("legal").join("|")
+                            );
                         } else {
-                            println!("jurisdiction: {} (profile .commonplace/packs/legal/jurisdictions/{}.yaml)", cfg.jurisdiction, cfg.jurisdiction);
+                            println!(
+                                "jurisdiction: {} (profile .commonplace/packs/legal/jurisdictions/{}.yaml)",
+                                cfg.jurisdiction, cfg.jurisdiction
+                            );
                         }
                     }
                 }

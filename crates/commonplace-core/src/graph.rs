@@ -12,7 +12,9 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
 
-static INLINE_FIELD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^\s*(?:[-*]\s*)?([A-Za-z][A-Za-z0-9_\-]*)::\s*(.+)$").unwrap());
+static INLINE_FIELD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*(?:[-*]\s*)?([A-Za-z][A-Za-z0-9_\-]*)::\s*(.+)$").unwrap()
+});
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Node {
@@ -50,15 +52,43 @@ const NON_RELATION_FIELDS: &[&str] = &["aliases", "tags"];
 pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
     let mut g = Graph::default();
     for p in &vault.pages {
-        if p.parse_error.is_some() || p.rel == "index.md" || p.rel.starts_with("indexes/") || ["index", "log", "registry", "questions", "error-book", "review"].contains(&p.ptype.as_str()) {
+        if p.parse_error.is_some()
+            || p.rel == "index.md"
+            || p.rel.starts_with("indexes/")
+            || [
+                "index",
+                "log",
+                "registry",
+                "questions",
+                "error-book",
+                "review",
+            ]
+            .contains(&p.ptype.as_str())
+        {
             continue;
         }
         g.index.insert(p.stem.to_lowercase(), g.nodes.len());
-        g.nodes.push(Node { id: p.stem.clone(), rel: p.rel.clone(), label: if p.ptype.is_empty() { "page".into() } else { p.ptype.clone() }, title: p.title.clone(), description: p.get("description").unwrap_or_default(), status: p.get("status").unwrap_or_default(), folder: p.folder() });
+        g.nodes.push(Node {
+            id: p.stem.clone(),
+            rel: p.rel.clone(),
+            label: if p.ptype.is_empty() {
+                "page".into()
+            } else {
+                p.ptype.clone()
+            },
+            title: p.title.clone(),
+            description: p.get("description").unwrap_or_default(),
+            status: p.get("status").unwrap_or_default(),
+            folder: p.folder(),
+        });
     }
     let mut seen: HashSet<Edge> = HashSet::new();
     let mut add = |g: &mut Graph, from: &str, to: &str, rel: &str| {
-        let e = Edge { from: from.to_string(), to: to.to_string(), rel: rel.to_string() };
+        let e = Edge {
+            from: from.to_string(),
+            to: to.to_string(),
+            rel: rel.to_string(),
+        };
         if from.eq_ignore_ascii_case(to) || !seen.insert(e.clone()) {
             return;
         }
@@ -83,7 +113,11 @@ pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
                 continue;
             }
             if let Some(t) = resolve(target) {
-                let rel = if field == "sources" { "cites" } else { field.as_str() };
+                let rel = if field == "sources" {
+                    "cites"
+                } else {
+                    field.as_str()
+                };
                 add(&mut g, &p.stem, &t, rel);
             }
         }
@@ -144,8 +178,16 @@ impl Graph {
     }
 
     /// Breadth-first neighbourhood up to `depth` hops.
-    pub fn walk(&self, start: &str, depth: usize, rels: &[String], direction: &str) -> Vec<WalkRow> {
-        let Some(s) = self.node(start) else { return vec![] };
+    pub fn walk(
+        &self,
+        start: &str,
+        depth: usize,
+        rels: &[String],
+        direction: &str,
+    ) -> Vec<WalkRow> {
+        let Some(s) = self.node(start) else {
+            return vec![];
+        };
         let mut seen: HashSet<String> = HashSet::new();
         seen.insert(s.id.to_lowercase());
         let mut q: VecDeque<(String, usize, Vec<String>)> = VecDeque::new();
@@ -156,12 +198,22 @@ impl Graph {
                 continue;
             }
             for (e, other) in self.neighbours(&id, rels, direction) {
-                let step = if e.from.eq_ignore_ascii_case(&id) { format!("-[{}]-> {}", e.rel, other) } else { format!("<-[{}]- {}", e.rel, other) };
+                let step = if e.from.eq_ignore_ascii_case(&id) {
+                    format!("-[{}]-> {}", e.rel, other)
+                } else {
+                    format!("<-[{}]- {}", e.rel, other)
+                };
                 let mut p = path.clone();
                 p.push(step);
                 if seen.insert(other.to_lowercase()) {
                     let n = self.node(&other);
-                    out.push(WalkRow { node: other.clone(), label: n.map(|n| n.label.clone()).unwrap_or_default(), depth: d + 1, path: p.join(" "), description: n.map(|n| n.description.clone()).unwrap_or_default() });
+                    out.push(WalkRow {
+                        node: other.clone(),
+                        label: n.map(|n| n.label.clone()).unwrap_or_default(),
+                        depth: d + 1,
+                        path: p.join(" "),
+                        description: n.map(|n| n.description.clone()).unwrap_or_default(),
+                    });
                     q.push_back((other, d + 1, p));
                 }
             }
@@ -170,8 +222,18 @@ impl Graph {
     }
 
     /// Shortest paths (up to `limit`) between two nodes, ignoring direction unless given.
-    pub fn paths(&self, from: &str, to: &str, max_depth: usize, rels: &[String], direction: &str, limit: usize) -> Vec<Vec<String>> {
-        let (Some(a), Some(b)) = (self.node(from), self.node(to)) else { return vec![] };
+    pub fn paths(
+        &self,
+        from: &str,
+        to: &str,
+        max_depth: usize,
+        rels: &[String],
+        direction: &str,
+        limit: usize,
+    ) -> Vec<Vec<String>> {
+        let (Some(a), Some(b)) = (self.node(from), self.node(to)) else {
+            return vec![];
+        };
         let target = b.id.to_lowercase();
         let mut results: Vec<Vec<String>> = vec![];
         let mut q: VecDeque<(String, Vec<String>, HashSet<String>)> = VecDeque::new();
@@ -189,7 +251,11 @@ impl Graph {
                 continue;
             }
             for (e, other) in self.neighbours(&id, rels, direction) {
-                let step = if e.from.eq_ignore_ascii_case(&id) { format!("-[{}]->", e.rel) } else { format!("<-[{}]-", e.rel) };
+                let step = if e.from.eq_ignore_ascii_case(&id) {
+                    format!("-[{}]->", e.rel)
+                } else {
+                    format!("<-[{}]-", e.rel)
+                };
                 if visited.contains(&other.to_lowercase()) {
                     continue;
                 }
@@ -220,18 +286,58 @@ impl Graph {
         }
         let mut rels: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
         for e in &self.edges {
-            let fl = self.node(&e.from).map(|n| n.label.clone()).unwrap_or_default();
-            let tl = self.node(&e.to).map(|n| n.label.clone()).unwrap_or_default();
-            *rels.entry(e.rel.clone()).or_default().entry(format!("{fl} → {tl}")).or_default() += 1;
+            let fl = self
+                .node(&e.from)
+                .map(|n| n.label.clone())
+                .unwrap_or_default();
+            let tl = self
+                .node(&e.to)
+                .map(|n| n.label.clone())
+                .unwrap_or_default();
+            *rels
+                .entry(e.rel.clone())
+                .or_default()
+                .entry(format!("{fl} → {tl}"))
+                .or_default() += 1;
         }
-        Schema { labels, relations: rels.into_iter().map(|(rel, pairs)| RelationSpec { rel, pairs }).collect() }
+        Schema {
+            labels,
+            relations: rels
+                .into_iter()
+                .map(|(rel, pairs)| RelationSpec { rel, pairs })
+                .collect(),
+        }
     }
 
     pub fn stats(&self) -> Stats {
-        let mut deg: Vec<(String, usize, usize)> = self.nodes.iter().map(|n| (n.id.clone(), self.out.get(&n.id.to_lowercase()).map(|v| v.len()).unwrap_or(0), self.inn.get(&n.id.to_lowercase()).map(|v| v.len()).unwrap_or(0))).collect();
+        let mut deg: Vec<(String, usize, usize)> = self
+            .nodes
+            .iter()
+            .map(|n| {
+                (
+                    n.id.clone(),
+                    self.out
+                        .get(&n.id.to_lowercase())
+                        .map(|v| v.len())
+                        .unwrap_or(0),
+                    self.inn
+                        .get(&n.id.to_lowercase())
+                        .map(|v| v.len())
+                        .unwrap_or(0),
+                )
+            })
+            .collect();
         deg.sort_by(|a, b| (b.1 + b.2).cmp(&(a.1 + a.2)));
-        let hubs: Vec<(String, usize)> = deg.iter().take(10).map(|(id, o, i)| (id.clone(), o + i)).collect();
-        let isolated: Vec<String> = deg.iter().filter(|(_, o, i)| o + i == 0).map(|(id, _, _)| id.clone()).collect();
+        let hubs: Vec<(String, usize)> = deg
+            .iter()
+            .take(10)
+            .map(|(id, o, i)| (id.clone(), o + i))
+            .collect();
+        let isolated: Vec<String> = deg
+            .iter()
+            .filter(|(_, o, i)| o + i == 0)
+            .map(|(id, _, _)| id.clone())
+            .collect();
         // connected components (undirected)
         let mut comp: HashMap<String, usize> = HashMap::new();
         let mut ncomp = 0;
@@ -259,32 +365,58 @@ impl Graph {
         }
         let mut comp_sizes: Vec<usize> = sizes.values().copied().collect();
         comp_sizes.sort_by(|a, b| b.cmp(a));
-        Stats { nodes: self.nodes.len(), edges: self.edges.len(), components: ncomp, largest_components: comp_sizes.into_iter().take(5).collect(), hubs, isolated }
+        Stats {
+            nodes: self.nodes.len(),
+            edges: self.edges.len(),
+            components: ncomp,
+            largest_components: comp_sizes.into_iter().take(5).collect(),
+            hubs,
+            isolated,
+        }
     }
 
     pub fn to_cypher(&self) -> String {
         let esc = |s: &str| s.replace('\\', "\\\\").replace('\'', "\\'");
         let label = |s: &str| {
-            let mut l: String = s.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+            let mut l: String = s
+                .chars()
+                .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                .collect();
             if l.is_empty() {
                 l = "Page".into();
             }
             let mut cs = l.chars();
-            cs.next().map(|f| f.to_uppercase().collect::<String>() + cs.as_str()).unwrap_or(l)
+            cs.next()
+                .map(|f| f.to_uppercase().collect::<String>() + cs.as_str())
+                .unwrap_or(l)
         };
-        let mut s = String::from("// Generated by `commonplace graph export --format cypher`. Load with cypher-shell or Neo4j Browser.\nCREATE CONSTRAINT commonplace_page_id IF NOT EXISTS FOR (p:Page) REQUIRE p.id IS UNIQUE;\n");
+        let mut s = String::from(
+            "// Generated by `commonplace graph export --format cypher`. Load with cypher-shell or Neo4j Browser.\nCREATE CONSTRAINT commonplace_page_id IF NOT EXISTS FOR (p:Page) REQUIRE p.id IS UNIQUE;\n",
+        );
         for n in &self.nodes {
             s.push_str(&format!("MERGE (n:Page {{id: '{}'}}) SET n:{}, n.title = '{}', n.path = '{}', n.description = '{}', n.status = '{}';\n", esc(&n.id), label(&n.label), esc(&n.title), esc(&n.rel), esc(&n.description), esc(&n.status)));
         }
         for e in &self.edges {
-            s.push_str(&format!("MATCH (a:Page {{id: '{}'}}), (b:Page {{id: '{}'}}) MERGE (a)-[:{}]->(b);\n", esc(&e.from), esc(&e.to), label(&e.rel).to_uppercase()));
+            s.push_str(&format!(
+                "MATCH (a:Page {{id: '{}'}}), (b:Page {{id: '{}'}}) MERGE (a)-[:{}]->(b);\n",
+                esc(&e.from),
+                esc(&e.to),
+                label(&e.rel).to_uppercase()
+            ));
         }
         s
     }
 
     pub fn to_graphml(&self) -> String {
-        let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
-        let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\">\n<key id=\"label\" for=\"node\" attr.name=\"label\" attr.type=\"string\"/>\n<key id=\"title\" for=\"node\" attr.name=\"title\" attr.type=\"string\"/>\n<key id=\"path\" for=\"node\" attr.name=\"path\" attr.type=\"string\"/>\n<key id=\"rel\" for=\"edge\" attr.name=\"rel\" attr.type=\"string\"/>\n<graph id=\"commonplace\" edgedefault=\"directed\">\n");
+        let esc = |s: &str| {
+            s.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+        };
+        let mut s = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\">\n<key id=\"label\" for=\"node\" attr.name=\"label\" attr.type=\"string\"/>\n<key id=\"title\" for=\"node\" attr.name=\"title\" attr.type=\"string\"/>\n<key id=\"path\" for=\"node\" attr.name=\"path\" attr.type=\"string\"/>\n<key id=\"rel\" for=\"edge\" attr.name=\"rel\" attr.type=\"string\"/>\n<graph id=\"commonplace\" edgedefault=\"directed\">\n",
+        );
         for n in &self.nodes {
             s.push_str(&format!("<node id=\"{}\"><data key=\"label\">{}</data><data key=\"title\">{}</data><data key=\"path\">{}</data></node>\n", esc(&n.id), esc(&n.label), esc(&n.title), esc(&n.rel)));
         }
@@ -297,15 +429,38 @@ impl Graph {
 
     pub fn to_mermaid(&self, ids: Option<&HashSet<String>>) -> String {
         let mut s = String::from("graph LR\n");
-        let key = |id: &str| -> String { format!("n{}", crate::fsutil::sha256_str(&id.to_lowercase())[..8].to_string()) };
+        let key = |id: &str| -> String {
+            format!(
+                "n{}",
+                crate::fsutil::sha256_str(&id.to_lowercase())[..8].to_string()
+            )
+        };
         for n in &self.nodes {
-            if ids.map(|set| set.contains(&n.id.to_lowercase())).unwrap_or(true) {
-                s.push_str(&format!("  {}[\"{}<br/><i>{}</i>\"]\n", key(&n.id), n.id.replace('"', "'"), n.label));
+            if ids
+                .map(|set| set.contains(&n.id.to_lowercase()))
+                .unwrap_or(true)
+            {
+                s.push_str(&format!(
+                    "  {}[\"{}<br/><i>{}</i>\"]\n",
+                    key(&n.id),
+                    n.id.replace('"', "'"),
+                    n.label
+                ));
             }
         }
         for e in &self.edges {
-            if ids.map(|set| set.contains(&e.from.to_lowercase()) && set.contains(&e.to.to_lowercase())).unwrap_or(true) {
-                s.push_str(&format!("  {} -->|{}| {}\n", key(&e.from), e.rel, key(&e.to)));
+            if ids
+                .map(|set| {
+                    set.contains(&e.from.to_lowercase()) && set.contains(&e.to.to_lowercase())
+                })
+                .unwrap_or(true)
+            {
+                s.push_str(&format!(
+                    "  {} -->|{}| {}\n",
+                    key(&e.from),
+                    e.rel,
+                    key(&e.to)
+                ));
             }
         }
         s
@@ -313,12 +468,23 @@ impl Graph {
 
     pub fn to_dot(&self) -> String {
         let esc = |s: &str| s.replace('"', "\\\"");
-        let mut s = String::from("digraph commonplace {\n  rankdir=LR; node [shape=box, fontsize=10];\n");
+        let mut s =
+            String::from("digraph commonplace {\n  rankdir=LR; node [shape=box, fontsize=10];\n");
         for n in &self.nodes {
-            s.push_str(&format!("  \"{}\" [label=\"{}\\n({})\"];\n", esc(&n.id), esc(&n.id), n.label));
+            s.push_str(&format!(
+                "  \"{}\" [label=\"{}\\n({})\"];\n",
+                esc(&n.id),
+                esc(&n.id),
+                n.label
+            ));
         }
         for e in &self.edges {
-            s.push_str(&format!("  \"{}\" -> \"{}\" [label=\"{}\"];\n", esc(&e.from), esc(&e.to), e.rel));
+            s.push_str(&format!(
+                "  \"{}\" -> \"{}\" [label=\"{}\"];\n",
+                esc(&e.from),
+                esc(&e.to),
+                e.rel
+            ));
         }
         s.push_str("}\n");
         s

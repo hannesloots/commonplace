@@ -1,7 +1,7 @@
 //! YAML frontmatter split/parse/serialise. The mapping keeps insertion order so
 //! rewriting a page does not reshuffle its properties.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde_yaml::{Mapping, Value};
 
 /// A parsed page: frontmatter mapping (may be empty) and body text.
@@ -18,7 +18,12 @@ pub struct Document {
 pub fn parse(text: &str) -> Result<Document> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     if !(text.starts_with("---\n") || text.starts_with("---\r\n")) {
-        return Ok(Document { fm: Mapping::new(), has_frontmatter: false, body: text.to_string(), body_line_offset: 0 });
+        return Ok(Document {
+            fm: Mapping::new(),
+            has_frontmatter: false,
+            body: text.to_string(),
+            body_line_offset: 0,
+        });
     }
     // find closing fence on its own line
     let mut offset = 0usize;
@@ -50,7 +55,12 @@ pub fn parse(text: &str) -> Result<Document> {
             other => return Err(anyhow!("frontmatter is not a mapping: {:?}", other)),
         }
     };
-    Ok(Document { fm, has_frontmatter: true, body: text[offset..].to_string(), body_line_offset: fm_lines })
+    Ok(Document {
+        fm,
+        has_frontmatter: true,
+        body: text[offset..].to_string(),
+        body_line_offset: fm_lines,
+    })
 }
 
 pub fn render(fm: &Mapping, body: &str) -> Result<String> {
@@ -87,7 +97,11 @@ pub fn scalar_to_string(v: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Null => String::new(),
-        Value::Sequence(seq) => seq.iter().map(scalar_to_string).collect::<Vec<_>>().join(", "),
+        Value::Sequence(seq) => seq
+            .iter()
+            .map(scalar_to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
         Value::Mapping(_) => "{...}".to_string(),
         Value::Tagged(t) => scalar_to_string(&t.value),
     }
@@ -97,7 +111,11 @@ pub fn scalar_to_string(v: &Value) -> String {
 pub fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
     match fm.get(key) {
         None | Some(Value::Null) => vec![],
-        Some(Value::Sequence(seq)) => seq.iter().map(scalar_to_string).filter(|s| !s.is_empty()).collect(),
+        Some(Value::Sequence(seq)) => seq
+            .iter()
+            .map(scalar_to_string)
+            .filter(|s| !s.is_empty())
+            .collect(),
         Some(v) => {
             let s = scalar_to_string(v);
             if s.is_empty() { vec![] } else { vec![s] }
@@ -118,7 +136,10 @@ pub fn get_bool(fm: &Mapping, key: &str) -> Option<bool> {
 }
 
 pub fn set_str(fm: &mut Mapping, key: &str, val: &str) {
-    fm.insert(Value::String(key.to_string()), Value::String(val.to_string()));
+    fm.insert(
+        Value::String(key.to_string()),
+        Value::String(val.to_string()),
+    );
 }
 
 pub fn set_value(fm: &mut Mapping, key: &str, val: Value) {

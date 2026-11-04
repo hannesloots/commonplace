@@ -8,7 +8,7 @@ use crate::markdown;
 use crate::pack::Pack;
 use crate::sources;
 use crate::vault::{Page, Vault};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
@@ -18,7 +18,8 @@ use std::path::Path;
 
 pub fn log_append(root: &Path, op: &str, title: &str, bullets: &[String]) -> Result<()> {
     let p = root.join("log.md");
-    let mut text = std::fs::read_to_string(&p).unwrap_or_else(|_| "---\ntype: log\n---\n\n# Log\n".to_string());
+    let mut text = std::fs::read_to_string(&p)
+        .unwrap_or_else(|_| "---\ntype: log\n---\n\n# Log\n".to_string());
     if !text.ends_with('\n') {
         text.push('\n');
     }
@@ -35,7 +36,10 @@ pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
     let text = std::fs::read_to_string(&p)?;
     let doc = frontmatter::parse(&text)?;
     let re = Regex::new(r"(?m)^## \[(\d{4})-\d{2}-\d{2}\] ").unwrap();
-    let starts: Vec<(usize, String)> = re.captures_iter(&doc.body).map(|c| (c.get(0).unwrap().start(), c[1].to_string())).collect();
+    let starts: Vec<(usize, String)> = re
+        .captures_iter(&doc.body)
+        .map(|c| (c.get(0).unwrap().start(), c[1].to_string()))
+        .collect();
     if starts.len() <= keep {
         return Ok(0);
     }
@@ -45,12 +49,16 @@ pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
     let mut by_year: BTreeMap<String, String> = BTreeMap::new();
     for i in 0..cut {
         let end = starts.get(i + 1).map(|s| s.0).unwrap_or(doc.body.len());
-        by_year.entry(starts[i].1.clone()).or_default().push_str(&doc.body[starts[i].0..end]);
+        by_year
+            .entry(starts[i].1.clone())
+            .or_default()
+            .push_str(&doc.body[starts[i].0..end]);
         moved += 1;
     }
     for (y, entries) in by_year {
         let ap = root.join("archive").join(format!("log-{y}.md"));
-        let mut t = std::fs::read_to_string(&ap).unwrap_or_else(|_| format!("---\ntype: log\n---\n\n# Log {y}\n\n"));
+        let mut t = std::fs::read_to_string(&ap)
+            .unwrap_or_else(|_| format!("---\ntype: log\n---\n\n# Log {y}\n\n"));
         t.push_str(&entries);
         fsutil::write_atomic(&ap, t.as_bytes())?;
     }
@@ -65,7 +73,11 @@ pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
 pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
     let mut set = HashSet::new();
     if root.join(".git").exists() {
-        let out = std::process::Command::new("git").arg("-C").arg(root).args(["status", "--porcelain", "--untracked-files=all"]).output();
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["status", "--porcelain", "--untracked-files=all"])
+            .output();
         if let Ok(o) = out {
             if o.status.success() {
                 for line in String::from_utf8_lossy(&o.stdout).lines() {
@@ -80,7 +92,11 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
                 }
                 // also files changed in the last commit if the tree is clean
                 if set.is_empty() {
-                    let o2 = std::process::Command::new("git").arg("-C").arg(root).args(["diff", "--name-only", "HEAD~1", "HEAD"]).output();
+                    let o2 = std::process::Command::new("git")
+                        .arg("-C")
+                        .arg(root)
+                        .args(["diff", "--name-only", "HEAD~1", "HEAD"])
+                        .output();
                     if let Ok(o2) = o2 {
                         for line in String::from_utf8_lossy(&o2.stdout).lines() {
                             if line.ends_with(".md") {
@@ -94,7 +110,11 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
         }
     }
     let manifest = crate::manifest::Manifest::load(root)?;
-    let since = manifest.last_lint.as_deref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&chrono::Local));
+    let since = manifest
+        .last_lint
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&chrono::Local));
     for path in crate::vault::walk_markdown(root) {
         let m = std::fs::metadata(&path)?.modified()?;
         let mt: chrono::DateTime<chrono::Local> = m.into();
@@ -116,7 +136,9 @@ pub struct RenameReport {
 }
 
 pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport> {
-    let page = vault.resolve_page(old).ok_or_else(|| anyhow!("no page named '{old}'"))?;
+    let page = vault
+        .resolve_page(old)
+        .ok_or_else(|| anyhow!("no page named '{old}'"))?;
     let new_title = fsutil::safe_title(new_title);
     if vault.resolve_page(&new_title).is_some() {
         bail!("a page named '{new_title}' already exists");
@@ -124,7 +146,11 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
     let new_path = page.path.with_file_name(format!("{new_title}.md"));
     let old_stem = page.stem.clone();
     // rewrite links everywhere
-    let re = Regex::new(&format!(r"(?i)\[\[(?:[^\]\|#]*/)?{}(#[^\]\|]*)?(\|[^\]]*)?\]\]", regex::escape(&old_stem))).unwrap();
+    let re = Regex::new(&format!(
+        r"(?i)\[\[(?:[^\]\|#]*/)?{}(#[^\]\|]*)?(\|[^\]]*)?\]\]",
+        regex::escape(&old_stem)
+    ))
+    .unwrap();
     let mut files_updated = vec![];
     let mut links = 0;
     for p in &vault.pages {
@@ -152,13 +178,22 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
     if !aliases.iter().any(|a| a.eq_ignore_ascii_case(&old_stem)) {
         aliases.push(old_stem.clone());
     }
-    frontmatter::set_value(&mut doc.fm, "aliases", serde_yaml::Value::Sequence(aliases.into_iter().map(serde_yaml::Value::String).collect()));
+    frontmatter::set_value(
+        &mut doc.fm,
+        "aliases",
+        serde_yaml::Value::Sequence(aliases.into_iter().map(serde_yaml::Value::String).collect()),
+    );
     frontmatter::set_str(&mut doc.fm, "updated", &fsutil::today());
     let h1 = Regex::new(&format!(r"(?m)^# {}\s*$", regex::escape(&old_stem))).unwrap();
     let body = h1.replace(&doc.body, format!("# {new_title}")).to_string();
     fsutil::write_atomic(&new_path, frontmatter::render(&doc.fm, &body)?.as_bytes())?;
     std::fs::remove_file(&page.path)?;
-    Ok(RenameReport { from: page.rel.clone(), to: fsutil::rel(&vault.root, &new_path), files_updated, links_rewritten: links })
+    Ok(RenameReport {
+        from: page.rel.clone(),
+        to: fsutil::rel(&vault.root, &new_path),
+        files_updated,
+        links_rewritten: links,
+    })
 }
 
 // ---------- dedupe ----------
@@ -173,11 +208,23 @@ pub struct DupeCandidate {
 
 pub fn dedupe(vault: &Vault, threshold: f64) -> Vec<DupeCandidate> {
     let mut out = vec![];
-    let cand: Vec<&Page> = vault.pages.iter().filter(|p| ["concept", "entity", "claim", "person", "topic", "playbook"].contains(&p.ptype.as_str()) || p.ptype.is_empty()).collect();
+    let cand: Vec<&Page> = vault
+        .pages
+        .iter()
+        .filter(|p| {
+            ["concept", "entity", "claim", "person", "topic", "playbook"]
+                .contains(&p.ptype.as_str())
+                || p.ptype.is_empty()
+        })
+        .collect();
     for (i, a) in cand.iter().enumerate() {
         for b in cand.iter().skip(i + 1) {
-            let names_a: Vec<String> = std::iter::once(a.stem.to_lowercase()).chain(a.aliases.iter().map(|s| s.to_lowercase())).collect();
-            let names_b: Vec<String> = std::iter::once(b.stem.to_lowercase()).chain(b.aliases.iter().map(|s| s.to_lowercase())).collect();
+            let names_a: Vec<String> = std::iter::once(a.stem.to_lowercase())
+                .chain(a.aliases.iter().map(|s| s.to_lowercase()))
+                .collect();
+            let names_b: Vec<String> = std::iter::once(b.stem.to_lowercase())
+                .chain(b.aliases.iter().map(|s| s.to_lowercase()))
+                .collect();
             let mut best = 0.0f64;
             for x in &names_a {
                 for y in &names_b {
@@ -192,10 +239,27 @@ pub fn dedupe(vault: &Vault, threshold: f64) -> Vec<DupeCandidate> {
                     }
                 }
             }
-            let shared: Vec<String> = a.list("sources").into_iter().filter(|s| b.list("sources").contains(s)).collect();
-            let sim = if shared.len() >= 2 { best.max(0.75) } else { best };
+            let shared: Vec<String> = a
+                .list("sources")
+                .into_iter()
+                .filter(|s| b.list("sources").contains(s))
+                .collect();
+            let sim = if shared.len() >= 2 {
+                best.max(0.75)
+            } else {
+                best
+            };
             if sim >= threshold && a.ptype == b.ptype {
-                out.push(DupeCandidate { a: a.rel.clone(), b: b.rel.clone(), similarity: (sim * 1000.0).round() / 1000.0, reason: if shared.is_empty() { "similar names".into() } else { format!("similar names and {} shared sources", shared.len()) } });
+                out.push(DupeCandidate {
+                    a: a.rel.clone(),
+                    b: b.rel.clone(),
+                    similarity: (sim * 1000.0).round() / 1000.0,
+                    reason: if shared.is_empty() {
+                        "similar names".into()
+                    } else {
+                        format!("similar names and {} shared sources", shared.len())
+                    },
+                });
             }
         }
     }
@@ -217,7 +281,10 @@ pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceR
         bail!("chain must be type, field, type[, field, type ...]");
     }
     let header: Vec<String> = chain.iter().step_by(2).cloned().collect();
-    let mut rows: Vec<Vec<String>> = vault.pages_of_type(&chain[0]).map(|p| vec![p.stem.clone()]).collect();
+    let mut rows: Vec<Vec<String>> = vault
+        .pages_of_type(&chain[0])
+        .map(|p| vec![p.stem.clone()])
+        .collect();
     let mut k = 1;
     while k + 1 < chain.len() {
         let field = &chain[k];
@@ -231,17 +298,32 @@ pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceR
                 next.push(r);
                 continue;
             }
-            let Some(p) = vault.resolve_page(&last) else { continue };
+            let Some(p) = vault.resolve_page(&last) else {
+                continue;
+            };
             // links in this field, or reverse links (pages of want_type whose field points at p)
-            let mut targets: Vec<String> = p.list(field).iter().flat_map(|s| markdown::wikilink_targets_in(s)).collect();
+            let mut targets: Vec<String> = p
+                .list(field)
+                .iter()
+                .flat_map(|s| markdown::wikilink_targets_in(s))
+                .collect();
             if targets.is_empty() {
                 for q in vault.pages_of_type(want_type) {
-                    if q.list(field).iter().flat_map(|s| markdown::wikilink_targets_in(s)).any(|t| t.eq_ignore_ascii_case(&p.stem)) {
+                    if q.list(field)
+                        .iter()
+                        .flat_map(|s| markdown::wikilink_targets_in(s))
+                        .any(|t| t.eq_ignore_ascii_case(&p.stem))
+                    {
                         targets.push(q.stem.clone());
                     }
                 }
             }
-            targets.retain(|t| vault.resolve_page(t).map(|q| q.ptype == *want_type).unwrap_or(false));
+            targets.retain(|t| {
+                vault
+                    .resolve_page(t)
+                    .map(|q| q.ptype == *want_type)
+                    .unwrap_or(false)
+            });
             if targets.is_empty() {
                 let mut r = row.clone();
                 r.push("—".into());
@@ -257,20 +339,36 @@ pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceR
         rows = next;
         k += 2;
     }
-    Ok((header, rows.into_iter().map(|cells| TraceRow { cells }).collect()))
+    Ok((
+        header,
+        rows.into_iter().map(|cells| TraceRow { cells }).collect(),
+    ))
 }
 
 pub fn pack_trace<'a>(packs: &'a [Pack], name: &str) -> Option<&'a crate::pack::Trace> {
-    packs.iter().flat_map(|p| p.traces.iter()).find(|t| t.name == name)
+    packs
+        .iter()
+        .flat_map(|p| p.traces.iter())
+        .find(|t| t.name == name)
 }
 
 // ---------- archive ----------
 
 pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
-    let page = vault.resolve_page(target).ok_or_else(|| anyhow!("no page named '{target}'"))?;
+    let page = vault
+        .resolve_page(target)
+        .ok_or_else(|| anyhow!("no page named '{target}'"))?;
     let folder = page.folder();
-    let src_dir = if folder.is_empty() { page.path.clone() } else { vault.root.join(&folder) };
-    let dest = vault.root.join("archive").join(if folder.is_empty() { page.rel.clone() } else { folder.clone() });
+    let src_dir = if folder.is_empty() {
+        page.path.clone()
+    } else {
+        vault.root.join(&folder)
+    };
+    let dest = vault.root.join("archive").join(if folder.is_empty() {
+        page.rel.clone()
+    } else {
+        folder.clone()
+    });
     if dest.exists() {
         bail!("{} already exists", dest.display());
     }
@@ -280,7 +378,13 @@ pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
     for p in crate::vault::walk_markdown(&dest) {
         let text = std::fs::read_to_string(&p)?;
         if let Ok(mut doc) = frontmatter::parse(&text) {
-            if doc.has_frontmatter && ["project", "area"].contains(&frontmatter::get_str(&doc.fm, "type").unwrap_or_default().as_str()) {
+            if doc.has_frontmatter
+                && ["project", "area"].contains(
+                    &frontmatter::get_str(&doc.fm, "type")
+                        .unwrap_or_default()
+                        .as_str(),
+                )
+            {
                 frontmatter::set_str(&mut doc.fm, "status", "archived");
                 frontmatter::set_str(&mut doc.fm, "archived", &fsutil::today());
                 fsutil::write_atomic(&p, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())?;
@@ -294,7 +398,11 @@ pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
 // ---------- export ----------
 
 pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> Result<String> {
-    let excluded: Vec<String> = if include_confidential { vec![] } else { vault.config.privacy.exclude_from_export.clone() };
+    let excluded: Vec<String> = if include_confidential {
+        vec![]
+    } else {
+        vault.config.privacy.exclude_from_export.clone()
+    };
     let mut pages: Vec<&Page> = vec![];
     for t in targets {
         if let Some(p) = vault.resolve_page(t) {
@@ -314,9 +422,14 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
     let mut bib: BTreeMap<String, &Page> = BTreeMap::new();
     let mut counter = 0usize;
     for p in pages {
-        let conf = p.get("confidentiality").unwrap_or_else(|| "personal".into());
+        let conf = p
+            .get("confidentiality")
+            .unwrap_or_else(|| "personal".into());
         if excluded.contains(&conf) {
-            out.push_str(&format!("\n<!-- {} omitted: confidentiality {} -->\n", p.rel, conf));
+            out.push_str(&format!(
+                "\n<!-- {} omitted: confidentiality {} -->\n",
+                p.rel, conf
+            ));
             continue;
         }
         let (cites, _) = cite::parse_citations(&p.doc.body);
@@ -333,7 +446,9 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
         }
         for c in &cites {
             if let Some(sp) = vault.resolve_page(&c.source) {
-                let sc = sp.get("confidentiality").unwrap_or_else(|| "personal".into());
+                let sc = sp
+                    .get("confidentiality")
+                    .unwrap_or_else(|| "personal".into());
                 if excluded.contains(&sc) {
                     if let Some(q) = &c.quote {
                         body = body.replace(q, "[quote withheld: confidential source]");
@@ -355,7 +470,26 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
             let origin = sp.get("origin").unwrap_or_default();
             let pubd = sp.get("published").unwrap_or_default();
             let auth = sp.get("author").unwrap_or_default();
-            out.push_str(&format!("- **{}**{}{}{} — retrieved {}\n", sp.title, if auth.is_empty() { String::new() } else { format!(", {auth}") }, if pubd.is_empty() { String::new() } else { format!(" ({pubd})") }, if origin.is_empty() { String::new() } else { format!(", {origin}") }, sp.get("retrieved").unwrap_or_default()));
+            out.push_str(&format!(
+                "- **{}**{}{}{} — retrieved {}\n",
+                sp.title,
+                if auth.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {auth}")
+                },
+                if pubd.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({pubd})")
+                },
+                if origin.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {origin}")
+                },
+                sp.get("retrieved").unwrap_or_default()
+            ));
             let _ = id;
         }
     }
@@ -384,14 +518,29 @@ pub struct Status {
 }
 
 pub fn status(vault: &Vault) -> Result<Status> {
-    let mut s = Status { name: vault.config.name.clone(), pages: vault.pages.len(), packs: vault.config.packs.clone(), ..Default::default() };
+    let mut s = Status {
+        name: vault.config.name.clone(),
+        pages: vault.pages.len(),
+        packs: vault.config.packs.clone(),
+        ..Default::default()
+    };
     let manifest = crate::manifest::Manifest::load(&vault.root)?;
     s.last_lint = manifest.last_lint.clone();
     for p in &vault.pages {
-        *s.by_type.entry(if p.ptype.is_empty() { "(none)".into() } else { p.ptype.clone() }).or_default() += 1;
+        *s.by_type
+            .entry(if p.ptype.is_empty() {
+                "(none)".into()
+            } else {
+                p.ptype.clone()
+            })
+            .or_default() += 1;
         if p.ptype == "project" && p.get("status").as_deref() == Some("active") {
             s.active_projects.push(p.stem.clone());
-            if p.list("next_actions").is_empty() && markdown::section(&p.doc.body, "Next actions").map(|x| !markdown::has_prose(x)).unwrap_or(true) {
+            if p.list("next_actions").is_empty()
+                && markdown::section(&p.doc.body, "Next actions")
+                    .map(|x| !markdown::has_prose(x))
+                    .unwrap_or(true)
+            {
                 s.projects_without_next_action.push(p.stem.clone());
             }
         }
@@ -410,20 +559,34 @@ pub fn status(vault: &Vault) -> Result<Status> {
             s.open_contradictions += cs.iter().filter(|c| matches!(c, serde_yaml::Value::Mapping(m) if frontmatter::get_str(m, "status").as_deref() != Some("resolved"))).count();
         }
         if p.ptype == "journal" {
-            s.journal_last = Some(s.journal_last.take().map(|j| if p.stem > j { p.stem.clone() } else { j }).unwrap_or(p.stem.clone()));
+            s.journal_last = Some(
+                s.journal_last
+                    .take()
+                    .map(|j| if p.stem > j { p.stem.clone() } else { j })
+                    .unwrap_or(p.stem.clone()),
+            );
         }
         let (c, _) = cite::parse_citations(&p.doc.body);
         s.citations_total += c.len();
     }
     if let Ok(rd) = std::fs::read_dir(vault.root.join("inbox")) {
-        s.inbox_items = rd.flatten().filter(|e| e.path().is_file() && !e.file_name().to_string_lossy().starts_with('.')).count();
+        s.inbox_items = rd
+            .flatten()
+            .filter(|e| e.path().is_file() && !e.file_name().to_string_lossy().starts_with('.'))
+            .count();
     }
     Ok(s)
 }
 
 // ---------- review packets ----------
 
-pub fn review_packet(vault: &Vault, persona_text: &str, persona: &str, targets: &[String], context_lines: usize) -> Result<String> {
+pub fn review_packet(
+    vault: &Vault,
+    persona_text: &str,
+    persona: &str,
+    targets: &[String],
+    context_lines: usize,
+) -> Result<String> {
     let mut pages: Vec<&Page> = vec![];
     for t in targets {
         if let Some(p) = vault.resolve_page(t) {
@@ -455,13 +618,23 @@ pub fn review_packet(vault: &Vault, persona_text: &str, persona: &str, targets: 
         }
         out.push_str("### Cited source spans\n\n");
         for c in &cites {
-            out.push_str(&format!("#### [^{}] → [[{}]] {}\n\n", c.label, c.source, c.locator_raw));
+            out.push_str(&format!(
+                "#### [^{}] → [[{}]] {}\n\n",
+                c.label, c.source, c.locator_raw
+            ));
             match sources::load_text_layer(&vault.root, &c.source) {
                 Ok(Some(tl)) => {
-                    let (v, found, _near, msg) = cite::verify_quote(&tl.text, c, vault.config.lint.quote_min_words, vault.config.lint.quote_max_words);
+                    let (v, found, _near, msg) = cite::verify_quote(
+                        &tl.text,
+                        c,
+                        vault.config.lint.quote_min_words,
+                        vault.config.lint.quote_max_words,
+                    );
                     out.push_str(&format!("Deterministic check: **{:?}** — {}\n\n", v, msg));
                     let lines: Vec<&str> = tl.text.lines().collect();
-                    let centre = found.or_else(|| cite::span(&tl.text, &c.locator).and_then(|s| s.first().map(|x| x.0)));
+                    let centre = found.or_else(|| {
+                        cite::span(&tl.text, &c.locator).and_then(|s| s.first().map(|x| x.0))
+                    });
                     if let Some(l) = centre {
                         let from = l.saturating_sub(1 + context_lines * 2);
                         let to = (l + context_lines * 4).min(lines.len());
@@ -488,15 +661,29 @@ pub struct ReviewRecord {
 
 /// Record persona findings (JSON array) into the reviewed pages' frontmatter and
 /// write a review page under reviews/.
-pub fn review_record(vault: &Vault, persona: &str, findings_json: &str, scope: &str, model: Option<&str>) -> Result<ReviewRecord> {
-    let findings: Vec<serde_json::Value> = serde_json::from_str(findings_json.trim()).map_err(|e| anyhow!("findings must be a JSON array: {e}"))?;
+pub fn review_record(
+    vault: &Vault,
+    persona: &str,
+    findings_json: &str,
+    scope: &str,
+    model: Option<&str>,
+) -> Result<ReviewRecord> {
+    let findings: Vec<serde_json::Value> = serde_json::from_str(findings_json.trim())
+        .map_err(|e| anyhow!("findings must be a JSON array: {e}"))?;
     let today = fsutil::today();
     let mut per_page: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
     for f in &findings {
-        let page = f.get("page").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let page = f
+            .get("page")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         per_page.entry(page).or_default().push(f);
     }
-    let blockers = findings.iter().filter(|f| f.get("severity").and_then(|v| v.as_str()) == Some("blocker")).count();
+    let blockers = findings
+        .iter()
+        .filter(|f| f.get("severity").and_then(|v| v.as_str()) == Some("blocker"))
+        .count();
     // review page
     let scope_title = fsutil::safe_title(scope);
     let rel = format!("reviews/{today} {persona} {scope_title}.md");
@@ -508,15 +695,30 @@ pub fn review_record(vault: &Vault, persona: &str, findings_json: &str, scope: &
     if let Some(m) = model {
         frontmatter::set_str(&mut fm, "model", m);
     }
-    frontmatter::set_value(&mut fm, "findings", serde_yaml::Value::Number(findings.len().into()));
-    frontmatter::set_value(&mut fm, "blockers", serde_yaml::Value::Number(blockers.into()));
+    frontmatter::set_value(
+        &mut fm,
+        "findings",
+        serde_yaml::Value::Number(findings.len().into()),
+    );
+    frontmatter::set_value(
+        &mut fm,
+        "blockers",
+        serde_yaml::Value::Number(blockers.into()),
+    );
     frontmatter::set_str(&mut fm, "resolution", "pending");
-    let mut body = format!("# Review: {persona} on {scope}\n\n{} finding(s), {} blocker(s). Resolve each: fix, waive (with reason), or file as an open question.\n\n", findings.len(), blockers);
+    let mut body = format!(
+        "# Review: {persona} on {scope}\n\n{} finding(s), {} blocker(s). Resolve each: fix, waive (with reason), or file as an open question.\n\n",
+        findings.len(),
+        blockers
+    );
     for f in &findings {
         let g = |k: &str| f.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
         body.push_str(&format!("## [{}] {} — {}\n\n- **Claim:** {}\n- **Problem:** {}\n- **Evidence:** {}\n- **Recommendation:** {}\n- **Resolution:** _pending_\n\n", g("severity"), g("page"), g("location"), g("claim"), g("problem"), g("evidence"), g("recommendation")));
     }
-    fsutil::write_atomic(&vault.root.join(&rel), frontmatter::render(&fm, &body)?.as_bytes())?;
+    fsutil::write_atomic(
+        &vault.root.join(&rel),
+        frontmatter::render(&fm, &body)?.as_bytes(),
+    )?;
     // stamp pages
     let mut updated = vec![];
     let all_pages: Vec<&Page> = {
@@ -549,15 +751,27 @@ pub fn review_record(vault: &Vault, persona: &str, findings_json: &str, scope: &
         if let Some(m) = model {
             frontmatter::set_str(&mut entry, "model", m);
         }
-        frontmatter::set_str(&mut entry, "result", if n == 0 { "pass" } else { "findings" });
+        frontmatter::set_str(
+            &mut entry,
+            "result",
+            if n == 0 { "pass" } else { "findings" },
+        );
         frontmatter::set_value(&mut entry, "findings", serde_yaml::Value::Number(n.into()));
-        frontmatter::set_str(&mut entry, "review", &format!("[[{}]]", fsutil::stem(Path::new(&rel))));
+        frontmatter::set_str(
+            &mut entry,
+            "review",
+            &format!("[[{}]]", fsutil::stem(Path::new(&rel))),
+        );
         reviews.push(serde_yaml::Value::Mapping(entry));
         frontmatter::set_value(&mut doc.fm, "reviews", serde_yaml::Value::Sequence(reviews));
         fsutil::write_atomic(&p.path, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())?;
         updated.push(p.rel.clone());
     }
-    Ok(ReviewRecord { pages_updated: updated, findings: findings.len(), blockers })
+    Ok(ReviewRecord {
+        pages_updated: updated,
+        findings: findings.len(),
+        blockers,
+    })
 }
 
 // ---------- backlinks / links ----------
@@ -576,12 +790,26 @@ pub fn broken_links(vault: &Vault) -> Vec<LinkIssue> {
     for p in &vault.pages {
         for l in &p.body_links {
             if vault.resolve_page(&l.target).is_none() && !known.contains(&l.target) {
-                out.push(LinkIssue { page: p.rel.clone(), line: Some(l.line + p.doc.body_line_offset), target: l.target.clone(), suggestions: vault.suggest(&l.target, 3).into_iter().map(|(s, _)| s).collect() });
+                out.push(LinkIssue {
+                    page: p.rel.clone(),
+                    line: Some(l.line + p.doc.body_line_offset),
+                    target: l.target.clone(),
+                    suggestions: vault
+                        .suggest(&l.target, 3)
+                        .into_iter()
+                        .map(|(s, _)| s)
+                        .collect(),
+                });
             }
         }
         for (_, t) in &p.fm_links {
             if vault.resolve_page(t).is_none() && !known.contains(t) {
-                out.push(LinkIssue { page: p.rel.clone(), line: Some(1), target: t.clone(), suggestions: vault.suggest(t, 3).into_iter().map(|(s, _)| s).collect() });
+                out.push(LinkIssue {
+                    page: p.rel.clone(),
+                    line: Some(1),
+                    target: t.clone(),
+                    suggestions: vault.suggest(t, 3).into_iter().map(|(s, _)| s).collect(),
+                });
             }
         }
     }
@@ -589,10 +817,19 @@ pub fn broken_links(vault: &Vault) -> Vec<LinkIssue> {
 }
 
 pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
-    let page = vault.resolve_page(target).ok_or_else(|| anyhow!("no page named '{target}'"))?;
-    let idx = vault.pages.iter().position(|p| std::ptr::eq(p, page)).unwrap();
+    let page = vault
+        .resolve_page(target)
+        .ok_or_else(|| anyhow!("no page named '{target}'"))?;
+    let idx = vault
+        .pages
+        .iter()
+        .position(|p| std::ptr::eq(p, page))
+        .unwrap();
     let bl = vault.backlinks();
-    let mut v: Vec<String> = bl.get(&idx).map(|xs| xs.iter().map(|&i| vault.pages[i].rel.clone()).collect()).unwrap_or_default();
+    let mut v: Vec<String> = bl
+        .get(&idx)
+        .map(|xs| xs.iter().map(|&i| vault.pages[i].rel.clone()).collect())
+        .unwrap_or_default();
     v.sort();
     Ok(v)
 }

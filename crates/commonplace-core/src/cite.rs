@@ -19,8 +19,10 @@ use unicode_normalization::UnicodeNormalization;
 static DEF_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^\s*\[\[([^\]\|#]+)(?:\|[^\]]*)?\]\]\s*([^"“”]*?)\s*(?:["“](.*?)["”])?\s*(?:[—\-]+\s*(.*))?$"#).unwrap()
 });
-static PAGE_MARK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<!--\s*page:\s*(\d+)\s*-->").unwrap());
-static PARA_MARK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)").unwrap());
+static PAGE_MARK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<!--\s*page:\s*(\d+)\s*-->").unwrap());
+static PARA_MARK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)").unwrap());
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Citation {
@@ -37,13 +39,26 @@ pub struct Citation {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Locator {
-    Page { from: u32, to: u32 },
-    Para { from: u32, to: u32 },
-    Line { from: usize, to: usize },
-    Section { id: String },
+    Page {
+        from: u32,
+        to: u32,
+    },
+    Para {
+        from: u32,
+        to: u32,
+    },
+    Line {
+        from: usize,
+        to: usize,
+    },
+    Section {
+        id: String,
+    },
     Whole,
     /// Something we cannot map to a span (timestamps, free text): verify over the whole file.
-    Free { text: String },
+    Free {
+        text: String,
+    },
 }
 
 pub fn parse_locator(s: &str) -> Locator {
@@ -51,29 +66,59 @@ pub fn parse_locator(s: &str) -> Locator {
     if t.is_empty() || t.eq_ignore_ascii_case("whole") {
         return Locator::Whole;
     }
-    static L_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:L|lines?\s*)(\d+)(?:\s*[-–]\s*L?(\d+))?$").unwrap());
-    static P_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:pp?\.?\s*|pages?\s+)(\d+)(?:\s*[-–]\s*(\d+))?$").unwrap());
-    static PARA_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:¶|para(?:graph)?s?\.?\s*|at\s+paras?\s*|\[)\s*(\d+)\]?(?:\s*[-–]\s*\[?(\d+)\]?)?$").unwrap());
-    static SEC_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:§|sec(?:tion)?\.?\s*|s\.?\s+)\s*([0-9A-Za-z][0-9A-Za-z.\-()]*)$").unwrap());
+    static L_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^(?:L|lines?\s*)(\d+)(?:\s*[-–]\s*L?(\d+))?$").unwrap());
+    static P_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^(?:pp?\.?\s*|pages?\s+)(\d+)(?:\s*[-–]\s*(\d+))?$").unwrap()
+    });
+    static PARA_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^(?:¶|para(?:graph)?s?\.?\s*|at\s+paras?\s*|\[)\s*(\d+)\]?(?:\s*[-–]\s*\[?(\d+)\]?)?$").unwrap()
+    });
+    static SEC_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^(?:§|sec(?:tion)?\.?\s*|s\.?\s+)\s*([0-9A-Za-z][0-9A-Za-z.\-()]*)$")
+            .unwrap()
+    });
     if let Some(c) = L_RE.captures(t) {
         let a: usize = c[1].parse().unwrap_or(1);
-        let b: usize = c.get(2).map(|m| m.as_str().parse().unwrap_or(a)).unwrap_or(a);
-        return Locator::Line { from: a.min(b), to: a.max(b) };
+        let b: usize = c
+            .get(2)
+            .map(|m| m.as_str().parse().unwrap_or(a))
+            .unwrap_or(a);
+        return Locator::Line {
+            from: a.min(b),
+            to: a.max(b),
+        };
     }
     if let Some(c) = P_RE.captures(t) {
         let a: u32 = c[1].parse().unwrap_or(1);
-        let b: u32 = c.get(2).map(|m| m.as_str().parse().unwrap_or(a)).unwrap_or(a);
-        return Locator::Page { from: a.min(b), to: a.max(b) };
+        let b: u32 = c
+            .get(2)
+            .map(|m| m.as_str().parse().unwrap_or(a))
+            .unwrap_or(a);
+        return Locator::Page {
+            from: a.min(b),
+            to: a.max(b),
+        };
     }
     if let Some(c) = PARA_RE.captures(t) {
         let a: u32 = c[1].parse().unwrap_or(1);
-        let b: u32 = c.get(2).map(|m| m.as_str().parse().unwrap_or(a)).unwrap_or(a);
-        return Locator::Para { from: a.min(b), to: a.max(b) };
+        let b: u32 = c
+            .get(2)
+            .map(|m| m.as_str().parse().unwrap_or(a))
+            .unwrap_or(a);
+        return Locator::Para {
+            from: a.min(b),
+            to: a.max(b),
+        };
     }
     if let Some(c) = SEC_RE.captures(t) {
-        return Locator::Section { id: c[1].to_string() };
+        return Locator::Section {
+            id: c[1].to_string(),
+        };
     }
-    Locator::Free { text: t.to_string() }
+    Locator::Free {
+        text: t.to_string(),
+    }
 }
 
 /// Parse all citation footnotes in a page body. Non-citation footnotes (no
@@ -84,14 +129,23 @@ pub fn parse_citations(body: &str) -> (Vec<Citation>, Vec<markdown::FootnoteDef>
     for def in markdown::footnote_defs(body) {
         match DEF_RE.captures(&def.text) {
             Some(c) if def.text.trim_start().starts_with("[[") => {
-                let locator_raw = c.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+                let locator_raw = c
+                    .get(2)
+                    .map(|m| m.as_str().trim().to_string())
+                    .unwrap_or_default();
                 cites.push(Citation {
                     label: def.label.clone(),
                     source: c[1].trim().to_string(),
                     locator: parse_locator(&locator_raw),
                     locator_raw,
-                    quote: c.get(3).map(|m| m.as_str().trim().to_string()).filter(|s| !s.is_empty()),
-                    comment: c.get(4).map(|m| m.as_str().trim().to_string()).filter(|s| !s.is_empty()),
+                    quote: c
+                        .get(3)
+                        .map(|m| m.as_str().trim().to_string())
+                        .filter(|s| !s.is_empty()),
+                    comment: c
+                        .get(4)
+                        .map(|m| m.as_str().trim().to_string())
+                        .filter(|s| !s.is_empty()),
                     line: def.line,
                     raw: def.text.clone(),
                 });
@@ -108,7 +162,9 @@ pub fn normalise(s: &str) -> String {
     // Markdown links and images compare by their visible text, so a URL that
     // changes (or was copied into a quote) can never break a match.
     // The link's title text (hover text) is kept too: it is visible content.
-    static MD_LINK_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new(r#"!?\[([^\]]*)\]\(\s*[^)\s]*(?:\s+"([^"]*)")?\s*\)"#).unwrap());
+    static MD_LINK_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#"!?\[([^\]]*)\]\(\s*[^)\s]*(?:\s+"([^"]*)")?\s*\)"#).unwrap()
+    });
     let s = MD_LINK_RE.replace_all(s, "$1 $2");
     let mut out = String::with_capacity(s.len());
     for c in s.nfkc() {
@@ -128,7 +184,12 @@ pub fn normalise(s: &str) -> String {
             out.push(lc);
         }
     }
-    out.split_whitespace().map(|w| w.trim_matches('\'')).map(|w| w.trim_start_matches('-')).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ")
+    out.split_whitespace()
+        .map(|w| w.trim_matches('\''))
+        .map(|w| w.trim_start_matches('-'))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A span of the text layer with line numbers, flattened to normalised words.
@@ -151,7 +212,10 @@ impl Haystack {
                 // join end-of-line hyphenation: "inter-" + "national"
                 if first {
                     if let Some(last) = words.last_mut() {
-                        if last.ends_with('-') && last.len() > 1 && w.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+                        if last.ends_with('-')
+                            && last.len() > 1
+                            && w.chars().next().map(|c| c.is_lowercase()).unwrap_or(false)
+                        {
                             last.pop();
                             last.push_str(w);
                             first = false;
@@ -171,7 +235,12 @@ impl Haystack {
             joined.push_str(w);
             joined.push(' ');
         }
-        Haystack { words, lines: line_of, joined, word_starts: starts }
+        Haystack {
+            words,
+            lines: line_of,
+            joined,
+            word_starts: starts,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -185,7 +254,11 @@ impl Haystack {
             return None;
         }
         let pat = format!("{needle} ");
-        let start_byte = self.word_starts.get(from_word).copied().unwrap_or(self.joined.len());
+        let start_byte = self
+            .word_starts
+            .get(from_word)
+            .copied()
+            .unwrap_or(self.joined.len());
         let mut search_from = start_byte;
         while let Some(pos) = self.joined[search_from..].find(&pat) {
             let abs = search_from + pos;
@@ -203,15 +276,24 @@ impl Haystack {
 
     /// Verify a quote; supports `...` / `…` / `[...]` ellipses between segments.
     pub fn verify(&self, quote: &str) -> Option<usize> {
-        let norm = normalise(quote).replace("[...]", "...").replace("[…]", "...").replace('…', "...");
-        let segments: Vec<&str> = norm.split("...").map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        let norm = normalise(quote)
+            .replace("[...]", "...")
+            .replace("[…]", "...")
+            .replace('…', "...");
+        let segments: Vec<&str> = norm
+            .split("...")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
         if segments.is_empty() {
             return None;
         }
         let mut from = 0usize;
         let mut first_line = None;
         for seg in segments {
-            let seg = seg.trim_matches(|c: char| c == '"' || c == '\'' || c == ',' || c == '.' || c == ';' || c == ':');
+            let seg = seg.trim_matches(|c: char| {
+                c == '"' || c == '\'' || c == ',' || c == '.' || c == ';' || c == ':'
+            });
             if seg.is_empty() {
                 continue;
             }
@@ -237,7 +319,11 @@ impl Haystack {
             *freq.entry(w.as_str()).or_default() += 1;
         }
         qwords.sort_by_key(|w| freq.get(w).copied().unwrap_or(0));
-        let key: Vec<&str> = qwords.into_iter().filter(|w| freq.get(w).copied().unwrap_or(0) > 0).take(3).collect();
+        let key: Vec<&str> = qwords
+            .into_iter()
+            .filter(|w| freq.get(w).copied().unwrap_or(0) > 0)
+            .take(3)
+            .collect();
         if key.is_empty() {
             return vec![];
         }
@@ -305,11 +391,20 @@ pub fn span<'a>(text: &'a str, loc: &Locator) -> Option<Vec<(usize, &'a str)>> {
             let hs = markdown::headings(text);
             let idx = hs.iter().position(|h| {
                 let t = h.text.trim_start_matches(['§', ' ']);
-                t.starts_with(id.as_str()) && t[id.len()..].chars().next().map(|c| !c.is_ascii_digit()).unwrap_or(true)
+                t.starts_with(id.as_str())
+                    && t[id.len()..]
+                        .chars()
+                        .next()
+                        .map(|c| !c.is_ascii_digit())
+                        .unwrap_or(true)
             })?;
             let level = hs[idx].level;
             let start = hs[idx].line;
-            let end = hs[idx + 1..].iter().find(|h| h.level <= level).map(|h| h.line - 1).unwrap_or(lines.len());
+            let end = hs[idx + 1..]
+                .iter()
+                .find(|h| h.level <= level)
+                .map(|h| h.line - 1)
+                .unwrap_or(lines.len());
             Some(lines[start - 1..end].to_vec())
         }
     }
@@ -343,16 +438,36 @@ pub struct CiteResult {
 }
 
 /// Verify one citation against the text layer of its source.
-pub fn verify_quote(text_layer: &str, cit: &Citation, min_words: usize, max_words: usize) -> (Verdict, Option<usize>, Vec<usize>, String) {
+pub fn verify_quote(
+    text_layer: &str,
+    cit: &Citation,
+    min_words: usize,
+    max_words: usize,
+) -> (Verdict, Option<usize>, Vec<usize>, String) {
     let Some(q) = &cit.quote else {
-        return (Verdict::NoQuote, None, vec![], "citation has no verbatim quote".into());
+        return (
+            Verdict::NoQuote,
+            None,
+            vec![],
+            "citation has no verbatim quote".into(),
+        );
     };
     let nwords = normalise(q).split(' ').filter(|w| !w.is_empty()).count();
     if nwords < min_words {
-        return (Verdict::QuoteTooShort, None, vec![], format!("quote has {nwords} words; minimum is {min_words}"));
+        return (
+            Verdict::QuoteTooShort,
+            None,
+            vec![],
+            format!("quote has {nwords} words; minimum is {min_words}"),
+        );
     }
     if nwords > max_words {
-        return (Verdict::QuoteTooLong, None, vec![], format!("quote has {nwords} words; maximum is {max_words}"));
+        return (
+            Verdict::QuoteTooLong,
+            None,
+            vec![],
+            format!("quote has {nwords} words; maximum is {max_words}"),
+        );
     }
     let whole = Haystack::new(&span(text_layer, &Locator::Whole).unwrap_or_default());
     match span(text_layer, &cit.locator) {
@@ -360,8 +475,14 @@ pub fn verify_quote(text_layer: &str, cit: &Citation, min_words: usize, max_word
             let near = whole.nearest_lines(q, 3);
             let in_whole = whole.verify(q);
             let msg = match in_whole {
-                Some(l) => format!("locator '{}' not found in text layer, but the quote exists at L{l}", cit.locator_raw),
-                None => format!("locator '{}' not found in text layer and quote not found anywhere", cit.locator_raw),
+                Some(l) => format!(
+                    "locator '{}' not found in text layer, but the quote exists at L{l}",
+                    cit.locator_raw
+                ),
+                None => format!(
+                    "locator '{}' not found in text layer and quote not found anywhere",
+                    cit.locator_raw
+                ),
             };
             (Verdict::SpanNotFound, in_whole, near, msg)
         }
@@ -371,11 +492,34 @@ pub fn verify_quote(text_layer: &str, cit: &Citation, min_words: usize, max_word
                 return (Verdict::Pass, Some(l), vec![], format!("ok (L{l})"));
             }
             match whole.verify(q) {
-                Some(l) => (Verdict::QuoteNotInSpan, Some(l), vec![l], format!("quote found at L{l}, which is outside the cited span '{}'", cit.locator_raw)),
+                Some(l) => (
+                    Verdict::QuoteNotInSpan,
+                    Some(l),
+                    vec![l],
+                    format!(
+                        "quote found at L{l}, which is outside the cited span '{}'",
+                        cit.locator_raw
+                    ),
+                ),
                 None => {
                     let near = whole.nearest_lines(q, 3);
-                    let hint = if near.is_empty() { String::new() } else { format!("; closest lines: {}", near.iter().map(|l| format!("L{l}")).collect::<Vec<_>>().join(", ")) };
-                    (Verdict::QuoteNotFound, None, near, format!("quote not found in source text{hint}"))
+                    let hint = if near.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            "; closest lines: {}",
+                            near.iter()
+                                .map(|l| format!("L{l}"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    };
+                    (
+                        Verdict::QuoteNotFound,
+                        None,
+                        near,
+                        format!("quote not found in source text{hint}"),
+                    )
                 }
             }
         }
@@ -388,10 +532,19 @@ mod tests {
 
     #[test]
     fn normalise_strips_link_markup() {
-        assert_eq!(normalise("The [rebate](/x/y) is tested."), "the rebate is tested");
-        assert_eq!(normalise("The [rebate](https://ato.gov.au/x) is tested."), normalise("The rebate is tested."));
+        assert_eq!(
+            normalise("The [rebate](/x/y) is tested."),
+            "the rebate is tested"
+        );
+        assert_eq!(
+            normalise("The [rebate](https://ato.gov.au/x) is tested."),
+            normalise("The rebate is tested.")
+        );
         assert_eq!(normalise("see ![logo](/a.svg) here"), "see logo here");
-        assert_eq!(normalise(r#"* [Age-based Discount](/x.htm "may be available to people") now"#), "age-based discount may be available to people now");
+        assert_eq!(
+            normalise(r#"* [Age-based Discount](/x.htm "may be available to people") now"#),
+            "age-based discount may be available to people now"
+        );
     }
 
     #[test]
@@ -402,18 +555,30 @@ mod tests {
         assert_eq!(p.len(), 1);
         assert_eq!(c[0].source, "2025-01-08 Mavundla v MEC");
         assert_eq!(c[0].locator, Locator::Para { from: 26, to: 26 });
-        assert_eq!(c[0].quote.as_deref(), Some("Counsel lazily omitted to verify"));
+        assert_eq!(
+            c[0].quote.as_deref(),
+            Some("Counsel lazily omitted to verify")
+        );
         assert_eq!(c[0].comment.as_deref(), Some("overreach?"));
     }
 
     #[test]
     fn locators() {
         assert_eq!(parse_locator("p.12"), Locator::Page { from: 12, to: 12 });
-        assert_eq!(parse_locator("pp. 12-14"), Locator::Page { from: 12, to: 14 });
+        assert_eq!(
+            parse_locator("pp. 12-14"),
+            Locator::Page { from: 12, to: 14 }
+        );
         assert_eq!(parse_locator("¶26"), Locator::Para { from: 26, to: 26 });
         assert_eq!(parse_locator("[26]"), Locator::Para { from: 26, to: 26 });
-        assert_eq!(parse_locator("at para 26"), Locator::Para { from: 26, to: 26 });
-        assert_eq!(parse_locator("L120-128"), Locator::Line { from: 120, to: 128 });
+        assert_eq!(
+            parse_locator("at para 26"),
+            Locator::Para { from: 26, to: 26 }
+        );
+        assert_eq!(
+            parse_locator("L120-128"),
+            Locator::Line { from: 120, to: 128 }
+        );
         assert_eq!(parse_locator("§3.2"), Locator::Section { id: "3.2".into() });
         assert_eq!(parse_locator(""), Locator::Whole);
     }
@@ -421,17 +586,36 @@ mod tests {
     #[test]
     fn verify_with_pages_and_hyphenation() {
         let text = "<!-- page:1 -->\nThe inter-\nnational “court” said: counsel must verify.\n<!-- page:2 -->\nOther text here.\n";
-        let cit = Citation { label: "1".into(), source: "s".into(), locator: parse_locator("p.1"), locator_raw: "p.1".into(), quote: Some("the international \"court\" said: counsel must verify".into()), comment: None, line: 1, raw: String::new() };
+        let cit = Citation {
+            label: "1".into(),
+            source: "s".into(),
+            locator: parse_locator("p.1"),
+            locator_raw: "p.1".into(),
+            quote: Some("the international \"court\" said: counsel must verify".into()),
+            comment: None,
+            line: 1,
+            raw: String::new(),
+        };
         let (v, l, _, _) = verify_quote(text, &cit, 3, 80);
         assert_eq!(v, Verdict::Pass);
         assert_eq!(l, Some(2));
-        let cit2 = Citation { locator: parse_locator("p.2"), locator_raw: "p.2".into(), ..cit.clone() };
+        let cit2 = Citation {
+            locator: parse_locator("p.2"),
+            locator_raw: "p.2".into(),
+            ..cit.clone()
+        };
         let (v, _, _, _) = verify_quote(text, &cit2, 3, 80);
         assert_eq!(v, Verdict::QuoteNotInSpan);
-        let cit3 = Citation { quote: Some("counsel must ... verify".into()), ..cit.clone() };
+        let cit3 = Citation {
+            quote: Some("counsel must ... verify".into()),
+            ..cit.clone()
+        };
         let (v, _, _, _) = verify_quote(text, &cit3, 3, 80);
         assert_eq!(v, Verdict::Pass);
-        let cit4 = Citation { quote: Some("counsel must never verify".into()), ..cit.clone() };
+        let cit4 = Citation {
+            quote: Some("counsel must never verify".into()),
+            ..cit.clone()
+        };
         let (v, _, near, _) = verify_quote(text, &cit4, 3, 80);
         assert_eq!(v, Verdict::QuoteNotFound);
         assert!(!near.is_empty());

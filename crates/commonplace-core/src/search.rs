@@ -27,7 +27,11 @@ pub struct SearchOptions {
 
 pub fn tokenize(s: &str) -> Vec<String> {
     let n = crate::cite::normalise(s);
-    n.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '\'').filter(|w| w.len() > 1).map(|w| w.trim_matches(|c| c == '-' || c == '\'').to_string()).filter(|w| !w.is_empty()).collect()
+    n.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '\'')
+        .filter(|w| w.len() > 1)
+        .map(|w| w.trim_matches(|c| c == '-' || c == '\'').to_string())
+        .filter(|w| !w.is_empty())
+        .collect()
 }
 
 struct Doc {
@@ -79,7 +83,14 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
             *tf.entry(w.clone()).or_default() += 1.0;
         }
         let len = tf.values().sum::<f64>().max(1.0);
-        docs.push(Doc { rel: p.rel.clone(), title: p.title.clone(), ptype: p.ptype.clone(), tf, len, text: p.doc.body.clone() });
+        docs.push(Doc {
+            rel: p.rel.clone(),
+            title: p.title.clone(),
+            ptype: p.ptype.clone(),
+            tf,
+            len,
+            text: p.doc.body.clone(),
+        });
     }
     if opts.include_text_layer {
         let dir = vault.root.join("sources").join("text");
@@ -95,7 +106,14 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
                         *tf.entry(w).or_default() += 1.0;
                     }
                     let len = tf.values().sum::<f64>().max(1.0);
-                    docs.push(Doc { rel: crate::fsutil::rel(&vault.root, &path), title: crate::fsutil::stem(&path), ptype: "source-text".into(), tf, len, text });
+                    docs.push(Doc {
+                        rel: crate::fsutil::rel(&vault.root, &path),
+                        title: crate::fsutil::stem(&path),
+                        ptype: "source-text".into(),
+                        tf,
+                        len,
+                        text,
+                    });
                 }
             }
         }
@@ -108,7 +126,10 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
     let qtokens = tokenize(query);
     let mut df: HashMap<&str, f64> = HashMap::new();
     for q in &qtokens {
-        df.insert(q, docs.iter().filter(|d| d.tf.contains_key(q)).count() as f64);
+        df.insert(
+            q,
+            docs.iter().filter(|d| d.tf.contains_key(q)).count() as f64,
+        );
     }
     let (k1, b) = (1.2, 0.75);
     let mut hits: Vec<Hit> = docs
@@ -127,7 +148,14 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
                 return None;
             }
             let (snippet, line) = snippet(&d.text, &qtokens);
-            Some(Hit { rel: d.rel.clone(), title: d.title.clone(), ptype: d.ptype.clone(), score, snippet, line })
+            Some(Hit {
+                rel: d.rel.clone(),
+                title: d.title.clone(),
+                ptype: d.ptype.clone(),
+                score,
+                snippet,
+                line,
+            })
         })
         .collect();
     hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());

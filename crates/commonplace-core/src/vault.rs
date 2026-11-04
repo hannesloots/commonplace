@@ -27,13 +27,35 @@ pub fn tool_dir(root: &Path) -> PathBuf {
     cur
 }
 
-pub const SKIP_DIRS: &[&str] = &[".commonplace", ".brain", ".git", ".obsidian", ".trash", "sources/raw", "sources/text", "node_modules"];
+pub const SKIP_DIRS: &[&str] = &[
+    ".commonplace",
+    ".brain",
+    ".git",
+    ".obsidian",
+    ".trash",
+    "sources/raw",
+    "sources/text",
+    "node_modules",
+];
 
 /// Root files that are instructions, not wiki pages.
 pub const SKIP_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "README.md"];
 
 /// Frontmatter fields whose values are links to other pages.
-pub const LINK_FIELDS: &[&str] = &["sources", "related", "up", "parent", "project", "projects", "area", "people", "superseded_by", "supersedes", "decided_in", "evidence"];
+pub const LINK_FIELDS: &[&str] = &[
+    "sources",
+    "related",
+    "up",
+    "parent",
+    "project",
+    "projects",
+    "area",
+    "people",
+    "superseded_by",
+    "supersedes",
+    "decided_in",
+    "evidence",
+];
 
 #[derive(Debug, Clone)]
 pub struct Page {
@@ -93,7 +115,14 @@ pub struct Vault {
 impl Vault {
     pub fn open(root: &Path) -> Result<Self> {
         let config = Config::load(root)?;
-        let mut v = Vault { root: root.to_path_buf(), config, pages: vec![], by_stem: HashMap::new(), by_alias: HashMap::new(), by_rel: HashMap::new() };
+        let mut v = Vault {
+            root: root.to_path_buf(),
+            config,
+            pages: vec![],
+            by_stem: HashMap::new(),
+            by_alias: HashMap::new(),
+            by_rel: HashMap::new(),
+        };
         v.load_pages()?;
         Ok(v)
     }
@@ -131,7 +160,10 @@ impl Vault {
         self.by_alias.clear();
         self.by_rel.clear();
         for (i, p) in self.pages.iter().enumerate() {
-            self.by_stem.entry(p.stem.to_lowercase()).or_default().push(i);
+            self.by_stem
+                .entry(p.stem.to_lowercase())
+                .or_default()
+                .push(i);
             self.by_rel.insert(p.rel.to_lowercase(), i);
             for a in &p.aliases {
                 self.by_alias.entry(a.to_lowercase()).or_default().push(i);
@@ -140,7 +172,9 @@ impl Vault {
     }
 
     pub fn page_by_rel(&self, rel: &str) -> Option<&Page> {
-        self.by_rel.get(&rel.to_lowercase()).map(|&i| &self.pages[i])
+        self.by_rel
+            .get(&rel.to_lowercase())
+            .map(|&i| &self.pages[i])
     }
 
     /// Resolve a wikilink target to candidate page indexes.
@@ -158,7 +192,16 @@ impl Vault {
             let last = lower.rsplit('/').next().unwrap_or(&lower).to_string();
             if let Some(v) = self.by_stem.get(&last) {
                 // prefer a page whose rel ends with the given path
-                let matching: Vec<usize> = v.iter().copied().filter(|&i| self.pages[i].rel.to_lowercase().ends_with(&format!("{lower}.md"))).collect();
+                let matching: Vec<usize> = v
+                    .iter()
+                    .copied()
+                    .filter(|&i| {
+                        self.pages[i]
+                            .rel
+                            .to_lowercase()
+                            .ends_with(&format!("{lower}.md"))
+                    })
+                    .collect();
                 if matching.len() == 1 {
                     return Resolution::Found(matching[0]);
                 }
@@ -260,7 +303,9 @@ pub fn walk_markdown(root: &Path) -> Vec<PathBuf> {
                 if rel.is_empty() {
                     return true;
                 }
-                !SKIP_DIRS.iter().any(|s| rel == *s || rel.starts_with(&format!("{s}/")))
+                !SKIP_DIRS
+                    .iter()
+                    .any(|s| rel == *s || rel.starts_with(&format!("{s}/")))
             }
         })
         .build();
@@ -277,13 +322,19 @@ pub fn walk_markdown(root: &Path) -> Vec<PathBuf> {
 }
 
 pub fn load_page(root: &Path, path: &Path) -> Result<Page> {
-    let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let doc = frontmatter::parse(&text).with_context(|| format!("{}", fsutil::rel(root, path)))?;
     let ptype = frontmatter::get_str(&doc.fm, "type").unwrap_or_default();
     let stem = fsutil::stem(path);
-    let title = frontmatter::get_str(&doc.fm, "title").or_else(|| markdown::first_h1(&doc.body)).unwrap_or_else(|| stem.clone());
+    let title = frontmatter::get_str(&doc.fm, "title")
+        .or_else(|| markdown::first_h1(&doc.body))
+        .unwrap_or_else(|| stem.clone());
     let aliases = frontmatter::get_list(&doc.fm, "aliases");
-    let tags = frontmatter::get_list(&doc.fm, "tags").into_iter().map(|t| t.trim_start_matches('#').to_string()).collect();
+    let tags = frontmatter::get_list(&doc.fm, "tags")
+        .into_iter()
+        .map(|t| t.trim_start_matches('#').to_string())
+        .collect();
     let body_links = markdown::wikilinks(&doc.body);
     let mut fm_links = vec![];
     for (k, v) in doc.fm.iter() {
@@ -294,7 +345,20 @@ pub fn load_page(root: &Path, path: &Path) -> Result<Page> {
         }
     }
     let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
-    Ok(Page { rel: fsutil::rel(root, path), path: path.to_path_buf(), stem, doc, ptype, title, aliases, tags, body_links, fm_links, parse_error: None, mtime })
+    Ok(Page {
+        rel: fsutil::rel(root, path),
+        path: path.to_path_buf(),
+        stem,
+        doc,
+        ptype,
+        title,
+        aliases,
+        tags,
+        body_links,
+        fm_links,
+        parse_error: None,
+        mtime,
+    })
 }
 
 pub fn save_page(page: &Page) -> Result<()> {

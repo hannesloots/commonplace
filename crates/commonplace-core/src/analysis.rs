@@ -11,7 +11,17 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
 
 /// Pages that carry knowledge (orphans/dead ends are judged on these).
-const SYNTHESIS: &[&str] = &["concept", "entity", "synthesis", "playbook", "decision", "person", "topic", "project", "area"];
+const SYNTHESIS: &[&str] = &[
+    "concept",
+    "entity",
+    "synthesis",
+    "playbook",
+    "decision",
+    "person",
+    "topic",
+    "project",
+    "area",
+];
 /// Pages that act as maps: a community without one is a synthesis gap.
 const HUB_TYPES: &[&str] = &["topic", "project", "area"];
 
@@ -30,7 +40,12 @@ impl Net {
         }
         let mut pairs: HashMap<(usize, usize), f64> = HashMap::new();
         for e in &g.edges {
-            let (Some(&a), Some(&b)) = (id_of.get(&e.from.to_lowercase()), id_of.get(&e.to.to_lowercase())) else { continue };
+            let (Some(&a), Some(&b)) = (
+                id_of.get(&e.from.to_lowercase()),
+                id_of.get(&e.to.to_lowercase()),
+            ) else {
+                continue;
+            };
             if a == b {
                 continue;
             }
@@ -46,7 +61,11 @@ impl Net {
             adj[a].push((b, w));
             adj[b].push((a, w));
         }
-        Net { n: g.nodes.len(), adj, id_of }
+        Net {
+            n: g.nodes.len(),
+            adj,
+            id_of,
+        }
     }
 
     pub fn degree(&self, i: usize) -> usize {
@@ -69,7 +88,9 @@ impl Net {
         if n == 0 {
             return vec![];
         }
-        let restart: Vec<f64> = if seeds.is_empty() { vec![1.0 / n as f64; n] } else {
+        let restart: Vec<f64> = if seeds.is_empty() {
+            vec![1.0 / n as f64; n]
+        } else {
             let mut r = vec![0.0; n];
             for &s in seeds {
                 r[s] = 1.0 / seeds.len() as f64;
@@ -136,7 +157,14 @@ impl Net {
                 break;
             }
             // self loops are stored as (i, i, w) and count twice in the strength
-            let k: Vec<f64> = (0..n).map(|i| adj[i].iter().map(|(j, w)| if *j == i { 2.0 * w } else { *w }).sum()).collect();
+            let k: Vec<f64> = (0..n)
+                .map(|i| {
+                    adj[i]
+                        .iter()
+                        .map(|(j, w)| if *j == i { 2.0 * w } else { *w })
+                        .sum()
+                })
+                .collect();
             let two_m: f64 = k.iter().sum();
             if two_m == 0.0 {
                 break;
@@ -155,7 +183,8 @@ impl Net {
                             *k_in.entry(comm[j]).or_default() += w;
                         }
                     }
-                    let gain = |c: usize| k_in.get(&c).copied().unwrap_or(0.0) - tot[c] * k[i] / two_m;
+                    let gain =
+                        |c: usize| k_in.get(&c).copied().unwrap_or(0.0) - tot[c] * k[i] / two_m;
                     let mut best = ci;
                     let mut best_gain = gain(ci);
                     for (&c, _) in &k_in {
@@ -206,28 +235,38 @@ impl Net {
                     }
                 }
             }
-            adj = agg.into_iter().map(|m| {
-                let mut v: Vec<(usize, f64)> = m.into_iter().collect();
-                v.sort_by(|x, y| x.0.cmp(&y.0));
-                v
-            }).collect();
+            adj = agg
+                .into_iter()
+                .map(|m| {
+                    let mut v: Vec<(usize, f64)> = m.into_iter().collect();
+                    v.sort_by(|x, y| x.0.cmp(&y.0));
+                    v
+                })
+                .collect();
             if nc == n {
                 break;
             }
         }
         // final renumber by first appearance
         let mut renum: HashMap<usize, usize> = HashMap::new();
-        membership.iter().map(|m| {
-            let next = renum.len();
-            *renum.entry(*m).or_insert(next)
-        }).collect()
+        membership
+            .iter()
+            .map(|m| {
+                let next = renum.len();
+                *renum.entry(*m).or_insert(next)
+            })
+            .collect()
     }
 
     /// Betweenness centrality (Brandes, unweighted). Sampled above 2000 nodes.
     pub fn betweenness(&self) -> Vec<f64> {
         let n = self.n;
         let mut cb = vec![0.0; n];
-        let sources: Vec<usize> = if n > 2000 { (0..n).step_by(n / 500 + 1).collect() } else { (0..n).collect() };
+        let sources: Vec<usize> = if n > 2000 {
+            (0..n).step_by(n / 500 + 1).collect()
+        } else {
+            (0..n).collect()
+        };
         for &s in &sources {
             let mut stack = vec![];
             let mut pred: Vec<Vec<usize>> = vec![vec![]; n];
@@ -260,7 +299,11 @@ impl Net {
                 }
             }
         }
-        let scale = if sources.len() < n { n as f64 / sources.len() as f64 } else { 1.0 };
+        let scale = if sources.len() < n {
+            n as f64 / sources.len() as f64
+        } else {
+            1.0
+        };
         cb.iter().map(|x| x * scale / 2.0).collect()
     }
 }
@@ -280,13 +323,27 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
     let net = Net::from_graph(g);
     let &p = net.id_of.get(&page.to_lowercase())?;
     let sources_of = |i: usize| -> BTreeSet<String> {
-        g.edges.iter().filter(|e| e.rel == "cites" && e.from.eq_ignore_ascii_case(&g.nodes[i].id)).map(|e| e.to.to_lowercase()).collect()
+        g.edges
+            .iter()
+            .filter(|e| e.rel == "cites" && e.from.eq_ignore_ascii_case(&g.nodes[i].id))
+            .map(|e| e.to.to_lowercase())
+            .collect()
     };
-    let tags_of = |i: usize| -> BTreeSet<String> { vault.resolve_page(&g.nodes[i].id).map(|pg| pg.tags.iter().map(|t| t.to_lowercase()).collect()).unwrap_or_default() };
+    let tags_of = |i: usize| -> BTreeSet<String> {
+        vault
+            .resolve_page(&g.nodes[i].id)
+            .map(|pg| pg.tags.iter().map(|t| t.to_lowercase()).collect())
+            .unwrap_or_default()
+    };
     let p_sources = sources_of(p);
     let p_tags = tags_of(p);
     let ppr = net.personalised_pagerank(&[p], 0.85);
-    let ppr_max = ppr.iter().enumerate().filter(|(i, _)| *i != p).map(|(_, v)| *v).fold(0.0, f64::max);
+    let ppr_max = ppr
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != p)
+        .map(|(_, v)| *v)
+        .fold(0.0, f64::max);
     // candidates: 2-hop neighbourhood, co-citers, tag sharers, top random-walk nodes
     let mut cands: BTreeSet<usize> = BTreeSet::new();
     for &(j, _) in &net.adj[p] {
@@ -299,7 +356,10 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
     order.sort_by(|a, b| ppr[*b].partial_cmp(&ppr[*a]).unwrap());
     cands.extend(order.iter().take(30).copied());
     for i in 0..net.n {
-        if i != p && (!p_sources.is_empty() && !sources_of(i).is_disjoint(&p_sources) || !p_tags.is_empty() && !tags_of(i).is_disjoint(&p_tags)) {
+        if i != p
+            && (!p_sources.is_empty() && !sources_of(i).is_disjoint(&p_sources)
+                || !p_tags.is_empty() && !tags_of(i).is_disjoint(&p_tags))
+        {
             cands.insert(i);
         }
     }
@@ -315,7 +375,9 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
                 }
             } else if t == pid {
                 if let Some(&j) = net.id_of.get(&f) {
-                    m.entry(j).or_default().insert(format!("{} (inbound)", e.rel));
+                    m.entry(j)
+                        .or_default()
+                        .insert(format!("{} (inbound)", e.rel));
                 }
             }
         }
@@ -327,17 +389,41 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
         let mut reasons = vec![];
         if let Some(rels) = direct.get(&c) {
             score += 1.0 * rels.len() as f64;
-            reasons.push(format!("linked: {}", rels.iter().cloned().collect::<Vec<_>>().join(", ")));
+            reasons.push(format!(
+                "linked: {}",
+                rels.iter().cloned().collect::<Vec<_>>().join(", ")
+            ));
         }
         let shared_src: Vec<String> = p_sources.intersection(&sources_of(c)).cloned().collect();
         if !shared_src.is_empty() {
             score += 0.4 * shared_src.len() as f64;
-            reasons.push(format!("cites {} same source{}: {}", shared_src.len(), if shared_src.len() == 1 { "" } else { "s" }, shared_src.iter().take(3).map(|s| display_id(g, s)).collect::<Vec<_>>().join("; ")));
+            reasons.push(format!(
+                "cites {} same source{}: {}",
+                shared_src.len(),
+                if shared_src.len() == 1 { "" } else { "s" },
+                shared_src
+                    .iter()
+                    .take(3)
+                    .map(|s| display_id(g, s))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ));
         }
         let (aa, shared) = net.adamic_adar(p, c);
         if aa > 0.0 {
             score += 0.5 * aa;
-            reasons.push(format!("{} shared neighbour{} (Adamic-Adar {:.2}): {}", shared.len(), if shared.len() == 1 { "" } else { "s" }, aa, shared.iter().take(3).map(|&z| g.nodes[z].id.clone()).collect::<Vec<_>>().join("; ")));
+            reasons.push(format!(
+                "{} shared neighbour{} (Adamic-Adar {:.2}): {}",
+                shared.len(),
+                if shared.len() == 1 { "" } else { "s" },
+                aa,
+                shared
+                    .iter()
+                    .take(3)
+                    .map(|&z| g.nodes[z].id.clone())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ));
         }
         let shared_tags: Vec<String> = p_tags.intersection(&tags_of(c)).cloned().collect();
         if !shared_tags.is_empty() {
@@ -352,16 +438,29 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
             }
         }
         if score > 0.0 {
-            rows.push(RelatedRow { node: g.nodes[c].id.clone(), label: g.nodes[c].label.clone(), score: (score * 100.0).round() / 100.0, reasons, description: g.nodes[c].description.clone() });
+            rows.push(RelatedRow {
+                node: g.nodes[c].id.clone(),
+                label: g.nodes[c].label.clone(),
+                score: (score * 100.0).round() / 100.0,
+                reasons,
+                description: g.nodes[c].description.clone(),
+            });
         }
     }
-    rows.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap().then(a.node.cmp(&b.node)));
+    rows.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap()
+            .then(a.node.cmp(&b.node))
+    });
     rows.truncate(limit);
     Some(rows)
 }
 
 fn display_id(g: &Graph, lower: &str) -> String {
-    g.node(lower).map(|n| n.id.clone()).unwrap_or_else(|| lower.to_string())
+    g.node(lower)
+        .map(|n| n.id.clone())
+        .unwrap_or_else(|| lower.to_string())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -377,8 +476,21 @@ pub fn hubs(g: &Graph, limit: usize) -> Vec<HubRow> {
     let net = Net::from_graph(g);
     let pr = net.pagerank();
     let bc = net.betweenness();
-    let mut rows: Vec<HubRow> = (0..net.n).map(|i| HubRow { node: g.nodes[i].id.clone(), label: g.nodes[i].label.clone(), pagerank: (pr[i] * 10000.0).round() / 10000.0, degree: net.degree(i), betweenness: bc[i].round() }).collect();
-    rows.sort_by(|a, b| b.pagerank.partial_cmp(&a.pagerank).unwrap().then(a.node.cmp(&b.node)));
+    let mut rows: Vec<HubRow> = (0..net.n)
+        .map(|i| HubRow {
+            node: g.nodes[i].id.clone(),
+            label: g.nodes[i].label.clone(),
+            pagerank: (pr[i] * 10000.0).round() / 10000.0,
+            degree: net.degree(i),
+            betweenness: bc[i].round(),
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        b.pagerank
+            .partial_cmp(&a.pagerank)
+            .unwrap()
+            .then(a.node.cmp(&b.node))
+    });
     rows.truncate(limit);
     rows
 }
@@ -430,7 +542,18 @@ pub fn communities(g: &Graph, min_size: usize) -> Vec<Community> {
                 }
             }
         }
-        out.push(Community { id: 0, size: members.len(), members: members.iter().take(8).map(|&i| g.nodes[i].id.clone()).collect(), types, hub, sources_cited: sources.len() });
+        out.push(Community {
+            id: 0,
+            size: members.len(),
+            members: members
+                .iter()
+                .take(8)
+                .map(|&i| g.nodes[i].id.clone())
+                .collect(),
+            types,
+            hub,
+            sources_cited: sources.len(),
+        });
     }
     out.sort_by(|a, b| b.size.cmp(&a.size).then(a.members.cmp(&b.members)));
     for (i, c) in out.iter_mut().enumerate() {
@@ -466,39 +589,99 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
         }
         for t in p.all_link_targets() {
             if matches!(vault.resolve(&t), Resolution::Missing) {
-                let e = wanted.entry(t.to_lowercase()).or_insert_with(|| (t.clone(), BTreeSet::new()));
+                let e = wanted
+                    .entry(t.to_lowercase())
+                    .or_insert_with(|| (t.clone(), BTreeSet::new()));
                 e.1.insert(p.stem.clone());
             }
         }
     }
-    let mut wanted: Vec<Wanted> = wanted.into_values().map(|(t, refs)| Wanted { suggestion: vault.suggest(&t, 1).into_iter().next().map(|(s, _)| s), target: t, referrers: refs.into_iter().collect() }).collect();
-    wanted.sort_by(|a, b| b.referrers.len().cmp(&a.referrers.len()).then(a.target.cmp(&b.target)));
+    let mut wanted: Vec<Wanted> = wanted
+        .into_values()
+        .map(|(t, refs)| Wanted {
+            suggestion: vault.suggest(&t, 1).into_iter().next().map(|(s, _)| s),
+            target: t,
+            referrers: refs.into_iter().collect(),
+        })
+        .collect();
+    wanted.sort_by(|a, b| {
+        b.referrers
+            .len()
+            .cmp(&a.referrers.len())
+            .then(a.target.cmp(&b.target))
+    });
 
     let net = Net::from_graph(g);
     let mut indeg = vec![0usize; net.n];
     let mut outdeg = vec![0usize; net.n];
     for e in &g.edges {
-        if let (Some(&a), Some(&b)) = (net.id_of.get(&e.from.to_lowercase()), net.id_of.get(&e.to.to_lowercase())) {
+        if let (Some(&a), Some(&b)) = (
+            net.id_of.get(&e.from.to_lowercase()),
+            net.id_of.get(&e.to.to_lowercase()),
+        ) {
             outdeg[a] += 1;
             indeg[b] += 1;
         }
     }
-    let archived = |i: usize| vault.resolve_page(&g.nodes[i].id).map(|p| p.is_archived()).unwrap_or(false);
-    let is_knowledge = |i: usize| SYNTHESIS.contains(&g.nodes[i].label.as_str()) || vault.resolve_page(&g.nodes[i].id).map(|p| !p.list("sources").is_empty() && !["source", "journal", "capture"].contains(&p.ptype.as_str())).unwrap_or(false);
-    let orphans: Vec<String> = (0..net.n).filter(|&i| indeg[i] == 0 && is_knowledge(i) && !archived(i)).map(|i| g.nodes[i].id.clone()).collect();
-    let dead_ends: Vec<String> = (0..net.n).filter(|&i| outdeg[i] == 0 && is_knowledge(i) && !archived(i)).map(|i| g.nodes[i].id.clone()).collect();
-    let uncited_sources: Vec<String> = (0..net.n).filter(|&i| g.nodes[i].label == "source" && indeg[i] == 0 && g.nodes[i].status != "superseded").map(|i| g.nodes[i].id.clone()).collect();
+    let archived = |i: usize| {
+        vault
+            .resolve_page(&g.nodes[i].id)
+            .map(|p| p.is_archived())
+            .unwrap_or(false)
+    };
+    let is_knowledge = |i: usize| {
+        SYNTHESIS.contains(&g.nodes[i].label.as_str())
+            || vault
+                .resolve_page(&g.nodes[i].id)
+                .map(|p| {
+                    !p.list("sources").is_empty()
+                        && !["source", "journal", "capture"].contains(&p.ptype.as_str())
+                })
+                .unwrap_or(false)
+    };
+    let orphans: Vec<String> = (0..net.n)
+        .filter(|&i| indeg[i] == 0 && is_knowledge(i) && !archived(i))
+        .map(|i| g.nodes[i].id.clone())
+        .collect();
+    let dead_ends: Vec<String> = (0..net.n)
+        .filter(|&i| outdeg[i] == 0 && is_knowledge(i) && !archived(i))
+        .map(|i| g.nodes[i].id.clone())
+        .collect();
+    let uncited_sources: Vec<String> = (0..net.n)
+        .filter(|&i| {
+            g.nodes[i].label == "source" && indeg[i] == 0 && g.nodes[i].status != "superseded"
+        })
+        .map(|i| g.nodes[i].id.clone())
+        .collect();
 
     let comms = communities(g, 3);
-    let communities_without_hub: Vec<Community> = comms.iter().filter(|c| c.hub.is_none()).cloned().collect();
-    let single_source_communities: Vec<Community> = comms.iter().filter(|c| c.sources_cited <= 1 && c.types.keys().any(|t| SYNTHESIS.contains(&t.as_str()))).cloned().collect();
+    let communities_without_hub: Vec<Community> =
+        comms.iter().filter(|c| c.hub.is_none()).cloned().collect();
+    let single_source_communities: Vec<Community> = comms
+        .iter()
+        .filter(|c| c.sources_cited <= 1 && c.types.keys().any(|t| SYNTHESIS.contains(&t.as_str())))
+        .cloned()
+        .collect();
 
     let mut bridges = hubs(g, usize::MAX);
-    bridges.sort_by(|a, b| b.betweenness.partial_cmp(&a.betweenness).unwrap().then(a.node.cmp(&b.node)));
+    bridges.sort_by(|a, b| {
+        b.betweenness
+            .partial_cmp(&a.betweenness)
+            .unwrap()
+            .then(a.node.cmp(&b.node))
+    });
     bridges.retain(|b| b.betweenness > 0.0);
     bridges.truncate(10);
 
-    Gaps { wanted, orphans, dead_ends, uncited_sources, communities_without_hub, single_source_communities, bridges }
+    Gaps {
+        wanted,
+        orphans,
+        dead_ends,
+        uncited_sources,
+        communities_without_hub,
+        single_source_communities,
+        bridges,
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -531,7 +714,11 @@ fn mask_keep_len(text: &str, re: &Regex) -> String {
     let mut last = 0;
     for m in re.find_iter(text) {
         out.push_str(&text[last..m.start()]);
-        out.extend(text[m.start()..m.end()].chars().map(|c| if c == '\n' { '\n' } else { ' ' }));
+        out.extend(
+            text[m.start()..m.end()]
+                .chars()
+                .map(|c| if c == '\n' { '\n' } else { ' ' }),
+        );
         last = m.end();
     }
     out.push_str(&text[last..]);
@@ -541,7 +728,12 @@ fn mask_keep_len(text: &str, re: &Regex) -> String {
 /// Unlinked mentions: occurrences of another page's title or alias in a
 /// page's prose that are not already links, with the line to put the link
 /// on. The highest-yield "missing cross-reference" signal.
-pub fn suggest_links(g: &Graph, vault: &Vault, only_page: Option<&str>, limit: usize) -> Vec<LinkSuggestion> {
+pub fn suggest_links(
+    g: &Graph,
+    vault: &Vault,
+    only_page: Option<&str>,
+    limit: usize,
+) -> Vec<LinkSuggestion> {
     // Multi-word names match case-insensitively. A single word only counts
     // when it is a proper noun or acronym (has a capital) and then matches
     // exactly, so an alias like "excess" cannot flood the prose with hits.
@@ -551,8 +743,13 @@ pub fn suggest_links(g: &Graph, vault: &Vault, only_page: Option<&str>, limit: u
         if ["source", "journal", "profile", "preferences", "glossary"].contains(&n.label.as_str()) {
             continue;
         }
-        let Some(p) = vault.resolve_page(&n.id) else { continue };
-        for name in std::iter::once(p.stem.clone()).chain(std::iter::once(p.title.clone())).chain(p.aliases.iter().cloned()) {
+        let Some(p) = vault.resolve_page(&n.id) else {
+            continue;
+        };
+        for name in std::iter::once(p.stem.clone())
+            .chain(std::iter::once(p.title.clone()))
+            .chain(p.aliases.iter().cloned())
+        {
             let name = name.trim().to_string();
             if name.chars().count() < 4 || !name.chars().any(|c| c.is_alphabetic()) {
                 continue;
@@ -571,17 +768,31 @@ pub fn suggest_links(g: &Graph, vault: &Vault, only_page: Option<&str>, limit: u
     if multi.is_empty() && single.is_empty() {
         return vec![];
     }
-    let lookup: HashMap<String, String> = multi.iter().cloned().chain(single.iter().map(|(n, t)| (n.to_lowercase(), t.clone()))).collect();
-    let alt = |v: &[(String, String)]| v.iter().map(|(n, _)| regex::escape(n)).collect::<Vec<_>>().join("|");
+    let lookup: HashMap<String, String> = multi
+        .iter()
+        .cloned()
+        .chain(single.iter().map(|(n, t)| (n.to_lowercase(), t.clone())))
+        .collect();
+    let alt = |v: &[(String, String)]| {
+        v.iter()
+            .map(|(n, _)| regex::escape(n))
+            .collect::<Vec<_>>()
+            .join("|")
+    };
     let pattern = match (multi.is_empty(), single.is_empty()) {
         (false, false) => format!(r"\b(?:(?i:{})|(?:{}))\b", alt(&multi), alt(&single)),
         (false, true) => format!(r"(?i)\b(?:{})\b", alt(&multi)),
         _ => format!(r"\b(?:{})\b", alt(&single)),
     };
-    let Ok(re) = Regex::new(&pattern) else { return vec![] };
+    let Ok(re) = Regex::new(&pattern) else {
+        return vec![];
+    };
     let mut out = vec![];
     for p in &vault.pages {
-        if p.parse_error.is_some() || g.node(&p.stem).is_none() || ["source", "journal", "capture"].contains(&p.ptype.as_str()) {
+        if p.parse_error.is_some()
+            || g.node(&p.stem).is_none()
+            || ["source", "journal", "capture"].contains(&p.ptype.as_str())
+        {
             continue;
         }
         if let Some(only) = only_page {
@@ -589,21 +800,43 @@ pub fn suggest_links(g: &Graph, vault: &Vault, only_page: Option<&str>, limit: u
                 continue;
             }
         }
-        let already: HashSet<String> = p.all_link_targets().iter().filter_map(|t| vault.resolve_page(t).map(|q| q.stem.to_lowercase())).collect();
+        let already: HashSet<String> = p
+            .all_link_targets()
+            .iter()
+            .filter_map(|t| vault.resolve_page(t).map(|q| q.stem.to_lowercase()))
+            .collect();
         let mut masked = p.doc.body.clone();
         for r in MASK_RES.iter() {
             masked = mask_keep_len(&masked, r);
         }
         let mut seen: HashSet<String> = HashSet::new();
         for m in re.find_iter(&masked) {
-            let Some(target) = lookup.get(&m.as_str().to_lowercase()) else { continue };
+            let Some(target) = lookup.get(&m.as_str().to_lowercase()) else {
+                continue;
+            };
             let tl = target.to_lowercase();
             if tl == p.stem.to_lowercase() || already.contains(&tl) || !seen.insert(tl) {
                 continue;
             }
             let line_idx = masked[..m.start()].matches('\n').count();
-            let context = p.doc.body.lines().nth(line_idx).unwrap_or("").trim().chars().take(160).collect::<String>();
-            out.push(LinkSuggestion { page: p.stem.clone(), path: p.rel.clone(), line: p.doc.body_line_offset + line_idx + 1, target: target.clone(), matched: m.as_str().to_string(), context });
+            let context = p
+                .doc
+                .body
+                .lines()
+                .nth(line_idx)
+                .unwrap_or("")
+                .trim()
+                .chars()
+                .take(160)
+                .collect::<String>();
+            out.push(LinkSuggestion {
+                page: p.stem.clone(),
+                path: p.rel.clone(),
+                line: p.doc.body_line_offset + line_idx + 1,
+                target: target.clone(),
+                matched: m.as_str().to_string(),
+                context,
+            });
             if out.len() >= limit {
                 return out;
             }
@@ -625,7 +858,19 @@ pub struct ConflictCandidate {
 /// Page pairs worth comparing for contradiction or staleness: same type,
 /// overlapping evidence or subject, no recorded contradiction between them.
 pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
-    let eligible: Vec<usize> = vault.pages.iter().enumerate().filter(|(_, p)| p.parse_error.is_none() && !p.is_archived() && (SYNTHESIS.contains(&p.ptype.as_str()) || !p.list("sources").is_empty()) && !["source", "journal", "capture", "topic", "project", "area"].contains(&p.ptype.as_str())).map(|(i, _)| i).collect();
+    let eligible: Vec<usize> = vault
+        .pages
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            p.parse_error.is_none()
+                && !p.is_archived()
+                && (SYNTHESIS.contains(&p.ptype.as_str()) || !p.list("sources").is_empty())
+                && !["source", "journal", "capture", "topic", "project", "area"]
+                    .contains(&p.ptype.as_str())
+        })
+        .map(|(i, _)| i)
+        .collect();
     let mut by_source: HashMap<String, Vec<usize>> = HashMap::new();
     let mut by_tag: HashMap<String, Vec<usize>> = HashMap::new();
     for &i in &eligible {
@@ -650,29 +895,60 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
             }
         }
     }
-    let tokens = |s: &str| -> HashSet<String> { s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() > 3).map(|w| w.to_string()).collect() };
+    let tokens = |s: &str| -> HashSet<String> {
+        s.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() > 3)
+            .map(|w| w.to_string())
+            .collect()
+    };
     let mut out = vec![];
     for (a, b) in pairs {
         let (pa, pb) = (&vault.pages[a], &vault.pages[b]);
-        let recorded = |p: &crate::vault::Page, other: &str| p.fm_links.iter().any(|(f, t)| f == "contradictions" && vault.resolve_page(t).map(|q| q.stem.eq_ignore_ascii_case(other)).unwrap_or(false)) || p.get("superseded_by").map(|s| s.to_lowercase().contains(&other.to_lowercase())).unwrap_or(false);
+        let recorded = |p: &crate::vault::Page, other: &str| {
+            p.fm_links.iter().any(|(f, t)| {
+                f == "contradictions"
+                    && vault
+                        .resolve_page(t)
+                        .map(|q| q.stem.eq_ignore_ascii_case(other))
+                        .unwrap_or(false)
+            }) || p
+                .get("superseded_by")
+                .map(|s| s.to_lowercase().contains(&other.to_lowercase()))
+                .unwrap_or(false)
+        };
         if recorded(pa, &pb.stem) || recorded(pb, &pa.stem) {
             continue;
         }
         let mut score = 0.0;
         let mut reasons = vec![];
-        let sa: HashSet<String> = pa.list("sources").iter().filter_map(|s| vault.resolve_page(s).map(|q| q.stem.to_lowercase())).collect();
-        let sb: HashSet<String> = pb.list("sources").iter().filter_map(|s| vault.resolve_page(s).map(|q| q.stem.to_lowercase())).collect();
+        let sa: HashSet<String> = pa
+            .list("sources")
+            .iter()
+            .filter_map(|s| vault.resolve_page(s).map(|q| q.stem.to_lowercase()))
+            .collect();
+        let sb: HashSet<String> = pb
+            .list("sources")
+            .iter()
+            .filter_map(|s| vault.resolve_page(s).map(|q| q.stem.to_lowercase()))
+            .collect();
         let shared = sa.intersection(&sb).count();
         if shared > 0 {
             score += 1.0 + 0.3 * shared as f64;
-            reasons.push(format!("{shared} shared source{}", if shared == 1 { "" } else { "s" }));
+            reasons.push(format!(
+                "{shared} shared source{}",
+                if shared == 1 { "" } else { "s" }
+            ));
         }
         let jw = strsim::jaro_winkler(&pa.title.to_lowercase(), &pb.title.to_lowercase());
         if jw > 0.85 {
             score += 1.5;
             reasons.push(format!("titles nearly identical ({jw:.2})"));
         }
-        let (ta, tb) = (tokens(&pa.get("description").unwrap_or_default()), tokens(&pb.get("description").unwrap_or_default()));
+        let (ta, tb) = (
+            tokens(&pa.get("description").unwrap_or_default()),
+            tokens(&pb.get("description").unwrap_or_default()),
+        );
         if !ta.is_empty() && !tb.is_empty() {
             let j = ta.intersection(&tb).count() as f64 / ta.union(&tb).count() as f64;
             if j >= 0.3 {
@@ -685,12 +961,22 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
             score += 0.2 * shared_tags as f64;
             reasons.push(format!("{shared_tags} shared tags"));
         }
-        let (ua, ub) = (pa.get("updated").unwrap_or_default(), pb.get("updated").unwrap_or_default());
+        let (ua, ub) = (
+            pa.get("updated").unwrap_or_default(),
+            pb.get("updated").unwrap_or_default(),
+        );
         if !ua.is_empty() && !ub.is_empty() && ua != ub && score > 0.0 {
             reasons.push(format!("updated on different dates ({ua} vs {ub})"));
         }
         if score >= 1.3 {
-            out.push(ConflictCandidate { a: pa.stem.clone(), b: pb.stem.clone(), ptype: pa.ptype.clone(), score: (score * 100.0).round() / 100.0, reasons, updated: (ua, ub) });
+            out.push(ConflictCandidate {
+                a: pa.stem.clone(),
+                b: pb.stem.clone(),
+                ptype: pa.ptype.clone(),
+                score: (score * 100.0).round() / 100.0,
+                reasons,
+                updated: (ua, ub),
+            });
         }
     }
     out.sort_by(|x, y| y.score.partial_cmp(&x.score).unwrap().then(x.a.cmp(&y.a)));
@@ -708,7 +994,11 @@ mod tests {
             adj[a].push((b, 1.0));
             adj[b].push((a, 1.0));
         }
-        Net { n, adj, id_of: HashMap::new() }
+        Net {
+            n,
+            adj,
+            id_of: HashMap::new(),
+        }
     }
 
     #[test]

@@ -6,18 +6,29 @@
 use crate::config::Config;
 use crate::frontmatter;
 use crate::fsutil;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 macro_rules! tpl {
     ($name:literal) => {
-        ($name, include_str!(concat!("../../../skills/commonplace/templates/", $name)))
+        (
+            $name,
+            include_str!(concat!("../../../skills/commonplace/templates/", $name)),
+        )
     };
 }
 macro_rules! pack_file {
     ($pack:literal, $name:literal) => {
-        (concat!($pack, "/", $name), include_str!(concat!("../../../skills/commonplace/packs/", $pack, "/", $name)))
+        (
+            concat!($pack, "/", $name),
+            include_str!(concat!(
+                "../../../skills/commonplace/packs/",
+                $pack,
+                "/",
+                $name
+            )),
+        )
     };
 }
 
@@ -55,7 +66,11 @@ pub const PAGE_TEMPLATES: &[(&str, &str)] = &[
 ];
 
 /// Memory pages created at init (relative path, template name).
-pub const MEMORY_PAGES: &[(&str, &str)] = &[("memory/Profile.md", "profile.md"), ("memory/Preferences.md", "preferences.md"), ("memory/Glossary.md", "glossary.md")];
+pub const MEMORY_PAGES: &[(&str, &str)] = &[
+    ("memory/Profile.md", "profile.md"),
+    ("memory/Preferences.md", "preferences.md"),
+    ("memory/Glossary.md", "glossary.md"),
+];
 
 /// Pack files (pack-relative path, content).
 pub const PACK_FILES: &[(&str, &str)] = &[
@@ -100,10 +115,33 @@ pub const PACK_FILES: &[(&str, &str)] = &[
     pack_file!("study", "templates/exam.md"),
 ];
 
-pub const DIRS: &[&str] = &["inbox", "journal", "sources/raw", "sources/text", "sources/notes", "projects", "areas", "resources/concepts", "resources/entities", "resources/topics", "resources/syntheses", "resources/playbooks", "memory/people", "memory/decisions", "questions", "reviews", "archive", "indexes", ".obsidian"];
+pub const DIRS: &[&str] = &[
+    "inbox",
+    "journal",
+    "sources/raw",
+    "sources/text",
+    "sources/notes",
+    "projects",
+    "areas",
+    "resources/concepts",
+    "resources/entities",
+    "resources/topics",
+    "resources/syntheses",
+    "resources/playbooks",
+    "memory/people",
+    "memory/decisions",
+    "questions",
+    "reviews",
+    "archive",
+    "indexes",
+    ".obsidian",
+];
 
 pub fn known_packs() -> Vec<String> {
-    let mut v: Vec<String> = PACK_FILES.iter().map(|(p, _)| p.split('/').next().unwrap().to_string()).collect();
+    let mut v: Vec<String> = PACK_FILES
+        .iter()
+        .map(|(p, _)| p.split('/').next().unwrap().to_string())
+        .collect();
     v.dedup();
     v
 }
@@ -120,7 +158,12 @@ pub fn normalise_pack(name: &str) -> (String, Option<&'static str>) {
 /// Jurisdiction profile codes shipped with a pack (excluding `generic`).
 pub fn known_jurisdictions(pack: &str) -> Vec<String> {
     let prefix = format!("{pack}/jurisdictions/");
-    let mut v: Vec<String> = PACK_FILES.iter().filter_map(|(p, _)| p.strip_prefix(&prefix)).map(|f| f.trim_end_matches(".yaml").to_string()).filter(|c| c != "generic").collect();
+    let mut v: Vec<String> = PACK_FILES
+        .iter()
+        .filter_map(|(p, _)| p.strip_prefix(&prefix))
+        .map(|f| f.trim_end_matches(".yaml").to_string())
+        .filter(|c| c != "generic")
+        .collect();
     v.sort();
     v
 }
@@ -134,14 +177,31 @@ pub struct InitReport {
 }
 
 fn fill(s: &str, name: &str, purpose: &str, title: &str) -> String {
-    s.replace("{{name}}", name).replace("{{purpose}}", purpose).replace("{{date}}", &fsutil::today()).replace("{{title}}", title).replace("{{year}}", &fsutil::today()[..4])
+    s.replace("{{name}}", name)
+        .replace("{{purpose}}", purpose)
+        .replace("{{date}}", &fsutil::today())
+        .replace("{{title}}", title)
+        .replace("{{year}}", &fsutil::today()[..4])
 }
 
-pub fn init(root: &Path, name: &str, purpose: &str, packs: &[String], jurisdiction: &str, force: bool) -> Result<InitReport> {
-    let mut rep = InitReport { root: root.display().to_string(), ..Default::default() };
+pub fn init(
+    root: &Path,
+    name: &str,
+    purpose: &str,
+    packs: &[String],
+    jurisdiction: &str,
+    force: bool,
+) -> Result<InitReport> {
+    let mut rep = InitReport {
+        root: root.display().to_string(),
+        ..Default::default()
+    };
     std::fs::create_dir_all(root)?;
     if crate::config::config_path(root).exists() && !force {
-        bail!("{} already has a commonplace.toml (use --force to re-apply templates; existing pages are never overwritten)", root.display());
+        bail!(
+            "{} already has a commonplace.toml (use --force to re-apply templates; existing pages are never overwritten)",
+            root.display()
+        );
     }
     for d in DIRS {
         std::fs::create_dir_all(root.join(d))?;
@@ -149,7 +209,11 @@ pub fn init(root: &Path, name: &str, purpose: &str, packs: &[String], jurisdicti
     let tool = crate::vault::tool_dir(root);
     std::fs::create_dir_all(tool.join("templates"))?;
     std::fs::create_dir_all(tool.join("packs"))?;
-    let mut cfg = if crate::config::config_path(root).exists() { Config::load(root)? } else { Config::default() };
+    let mut cfg = if crate::config::config_path(root).exists() {
+        Config::load(root)?
+    } else {
+        Config::default()
+    };
     if !name.is_empty() {
         cfg.name = name.to_string();
     }
@@ -159,7 +223,10 @@ pub fn init(root: &Path, name: &str, purpose: &str, packs: &[String], jurisdicti
     for raw in packs {
         let (p, jur) = normalise_pack(raw);
         if !known_packs().contains(&p) {
-            bail!("unknown pack '{p}'; known packs: {}", known_packs().join(", "));
+            bail!(
+                "unknown pack '{p}'; known packs: {}",
+                known_packs().join(", ")
+            );
         }
         if !cfg.packs.contains(&p) {
             cfg.packs.push(p.clone());
@@ -186,7 +253,9 @@ pub fn init(root: &Path, name: &str, purpose: &str, packs: &[String], jurisdicti
             let old = std::fs::read_to_string(&path)?;
             let merged = merge_local_rules(&text, &old);
             fsutil::write_atomic(&path, merged.as_bytes())?;
-            rep.created.push(format!("{target} (standard sections refreshed, local rules kept)"));
+            rep.created.push(format!(
+                "{target} (standard sections refreshed, local rules kept)"
+            ));
             continue;
         }
         if fsutil::write_if_absent(&path, &text)? {
@@ -196,13 +265,23 @@ pub fn init(root: &Path, name: &str, purpose: &str, packs: &[String], jurisdicti
         }
     }
     for (fname, content) in PAGE_TEMPLATES {
-        fsutil::write_atomic(&crate::vault::tool_dir(root).join("templates").join(fname), content.as_bytes())?;
+        fsutil::write_atomic(
+            &crate::vault::tool_dir(root).join("templates").join(fname),
+            content.as_bytes(),
+        )?;
     }
     rep.created.push(".commonplace/templates/*".into());
     for (rel, tname) in MEMORY_PAGES {
-        let content = PAGE_TEMPLATES.iter().find(|(n, _)| n == tname).map(|(_, c)| *c).unwrap_or("");
+        let content = PAGE_TEMPLATES
+            .iter()
+            .find(|(n, _)| n == tname)
+            .map(|(_, c)| *c)
+            .unwrap_or("");
         let title = fsutil::stem(Path::new(rel));
-        if fsutil::write_if_absent(&root.join(rel), &fill(content, &cfg.name, &cfg.purpose, &title))? {
+        if fsutil::write_if_absent(
+            &root.join(rel),
+            &fill(content, &cfg.name, &cfg.purpose, &title),
+        )? {
             rep.created.push(rel.to_string());
         }
     }
@@ -211,7 +290,11 @@ pub fn init(root: &Path, name: &str, purpose: &str, packs: &[String], jurisdicti
         rep.packs.push(p.clone());
     }
     // prove every pack loads with this configuration (unknown jurisdiction fails here, not at lint time)
-    crate::pack::load_packs(&crate::vault::tool_dir(root).join("packs"), &cfg.packs, &cfg.jurisdiction)?;
+    crate::pack::load_packs(
+        &crate::vault::tool_dir(root).join("packs"),
+        &cfg.packs,
+        &cfg.jurisdiction,
+    )?;
     crate::manifest::Manifest::load(root)?.save(root)?;
     Ok(rep)
 }
@@ -235,7 +318,9 @@ fn merge_local_rules(new: &str, old: &str) -> String {
         _ => None,
     };
     match (old_local, new.find(s), new.find(e)) {
-        (Some(local), Some(a), Some(b)) if b > a => format!("{}{}{}", &new[..a], local, &new[b + e.len()..]),
+        (Some(local), Some(a), Some(b)) if b > a => {
+            format!("{}{}{}", &new[..a], local, &new[b + e.len()..])
+        }
         _ => new.to_string(),
     }
 }
@@ -269,27 +354,59 @@ pub fn default_folder(ptype: &str, title: &str) -> Option<String> {
     })
 }
 
-pub fn new_page(root: &Path, cfg: &Config, ptype: &str, title: &str, folder: Option<&str>, extra: &[(String, String)]) -> Result<NewReport> {
-    let title = if ptype == "journal" && title.is_empty() { fsutil::today() } else { fsutil::safe_title(title) };
+pub fn new_page(
+    root: &Path,
+    cfg: &Config,
+    ptype: &str,
+    title: &str,
+    folder: Option<&str>,
+    extra: &[(String, String)],
+) -> Result<NewReport> {
+    let title = if ptype == "journal" && title.is_empty() {
+        fsutil::today()
+    } else {
+        fsutil::safe_title(title)
+    };
     if title.is_empty() {
         bail!("a title is required");
     }
     // find template: commonplace templates, then pack templates
-    let mut tpl_path = crate::vault::tool_dir(root).join("templates").join(format!("{ptype}.md"));
+    let mut tpl_path = crate::vault::tool_dir(root)
+        .join("templates")
+        .join(format!("{ptype}.md"));
     let mut pack_hint: Option<String> = None;
     if !tpl_path.exists() {
         for p in &cfg.packs {
-            let cand = crate::vault::tool_dir(root).join("packs").join(p).join("templates").join(format!("{ptype}.md"));
+            let cand = crate::vault::tool_dir(root)
+                .join("packs")
+                .join(p)
+                .join("templates")
+                .join(format!("{ptype}.md"));
             if cand.exists() {
                 tpl_path = cand;
-                let packs = crate::pack::load_packs(&crate::vault::tool_dir(root).join("packs"), std::slice::from_ref(p), &cfg.jurisdiction)?;
-                pack_hint = packs.first().and_then(|pk| pk.types.get(ptype)).map(|t| t.folder_hint.clone()).filter(|h| !h.is_empty());
+                let packs = crate::pack::load_packs(
+                    &crate::vault::tool_dir(root).join("packs"),
+                    std::slice::from_ref(p),
+                    &cfg.jurisdiction,
+                )?;
+                pack_hint = packs
+                    .first()
+                    .and_then(|pk| pk.types.get(ptype))
+                    .map(|t| t.folder_hint.clone())
+                    .filter(|h| !h.is_empty());
                 break;
             }
         }
     }
     if !tpl_path.exists() {
-        bail!("no template for type '{ptype}' (core types: {}; pack types come from enabled packs)", PAGE_TEMPLATES.iter().map(|(n, _)| n.trim_end_matches(".md")).collect::<Vec<_>>().join(", "));
+        bail!(
+            "no template for type '{ptype}' (core types: {}; pack types come from enabled packs)",
+            PAGE_TEMPLATES
+                .iter()
+                .map(|(n, _)| n.trim_end_matches(".md"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
     let folder = match folder {
         Some(f) => f.trim_matches('/').to_string(),
@@ -308,7 +425,10 @@ pub fn new_page(root: &Path, cfg: &Config, ptype: &str, title: &str, folder: Opt
     // uniqueness of stem across vault
     for existing in crate::vault::walk_markdown(root) {
         if fsutil::stem(&existing).eq_ignore_ascii_case(&title) {
-            bail!("a page named '{title}' already exists at {} (extend it, or pick a distinct title)", fsutil::rel(root, &existing));
+            bail!(
+                "a page named '{title}' already exists at {} (extend it, or pick a distinct title)",
+                fsutil::rel(root, &existing)
+            );
         }
     }
     let raw = std::fs::read_to_string(&tpl_path)?;
@@ -316,7 +436,12 @@ pub fn new_page(root: &Path, cfg: &Config, ptype: &str, title: &str, folder: Opt
     let mut doc = frontmatter::parse(&text)?;
     for (k, v) in extra {
         if v.starts_with('[') && v.ends_with(']') {
-            let items: Vec<serde_yaml::Value> = v[1..v.len() - 1].split(',').map(|s| s.trim().trim_matches('"').to_string()).filter(|s| !s.is_empty()).map(serde_yaml::Value::String).collect();
+            let items: Vec<serde_yaml::Value> = v[1..v.len() - 1]
+                .split(',')
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .filter(|s| !s.is_empty())
+                .map(serde_yaml::Value::String)
+                .collect();
             frontmatter::set_value(&mut doc.fm, k, serde_yaml::Value::Sequence(items));
         } else {
             frontmatter::set_str(&mut doc.fm, k, v);
@@ -325,22 +450,42 @@ pub fn new_page(root: &Path, cfg: &Config, ptype: &str, title: &str, folder: Opt
     frontmatter::set_str(&mut doc.fm, "created", &fsutil::today());
     frontmatter::set_str(&mut doc.fm, "updated", &fsutil::today());
     fsutil::write_atomic(&path, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())?;
-    Ok(NewReport { path: fsutil::rel(root, &path), ptype: ptype.to_string(), title })
+    Ok(NewReport {
+        path: fsutil::rel(root, &path),
+        ptype: ptype.to_string(),
+        title,
+    })
 }
 
 pub fn template_dir(root: &Path) -> PathBuf {
     crate::vault::tool_dir(root).join("templates")
 }
 
-pub fn persona_text(root: &Path, skill_dir: Option<&Path>, cfg: &Config, name: &str) -> Result<String> {
+pub fn persona_text(
+    root: &Path,
+    skill_dir: Option<&Path>,
+    cfg: &Config,
+    name: &str,
+) -> Result<String> {
     let mut candidates: Vec<PathBuf> = vec![];
     for p in &cfg.packs {
-        candidates.push(crate::vault::tool_dir(root).join("packs").join(p).join("personas").join(format!("{name}.md")));
+        candidates.push(
+            crate::vault::tool_dir(root)
+                .join("packs")
+                .join(p)
+                .join("personas")
+                .join(format!("{name}.md")),
+        );
     }
     if let Some(sd) = skill_dir {
         candidates.push(sd.join("references/personas").join(format!("{name}.md")));
         for p in &cfg.packs {
-            candidates.push(sd.join("packs").join(p).join("personas").join(format!("{name}.md")));
+            candidates.push(
+                sd.join("packs")
+                    .join(p)
+                    .join("personas")
+                    .join(format!("{name}.md")),
+            );
         }
     }
     candidates.push(root.join("reviews/personas").join(format!("{name}.md")));
@@ -349,7 +494,14 @@ pub fn persona_text(root: &Path, skill_dir: Option<&Path>, cfg: &Config, name: &
             return Ok(std::fs::read_to_string(c)?);
         }
     }
-    Err(anyhow!("persona '{name}' not found (looked in {})", candidates.iter().map(|c| c.display().to_string()).collect::<Vec<_>>().join(", ")))
+    Err(anyhow!(
+        "persona '{name}' not found (looked in {})",
+        candidates
+            .iter()
+            .map(|c| c.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 #[cfg(test)]
@@ -364,7 +516,10 @@ mod tests {
                 assert!(pack.is_ok(), "{rel}: {:?}", pack.err());
                 let pack = pack.unwrap();
                 for r in &pack.rules {
-                    assert!(!r.id.is_empty() && !r.check.is_empty(), "{rel}: rule without id/check");
+                    assert!(
+                        !r.id.is_empty() && !r.check.is_empty(),
+                        "{rel}: rule without id/check"
+                    );
                 }
             }
         }
@@ -372,10 +527,16 @@ mod tests {
 
     #[test]
     fn embedded_templates_have_frontmatter() {
-        for (name, content) in PAGE_TEMPLATES.iter().chain(PACK_FILES.iter().filter(|(n, _)| n.contains("/templates/"))) {
+        for (name, content) in PAGE_TEMPLATES
+            .iter()
+            .chain(PACK_FILES.iter().filter(|(n, _)| n.contains("/templates/")))
+        {
             let doc = crate::frontmatter::parse(content).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(doc.has_frontmatter, "{name}: no frontmatter");
-            assert!(crate::frontmatter::get_str(&doc.fm, "type").is_some(), "{name}: no type");
+            assert!(
+                crate::frontmatter::get_str(&doc.fm, "type").is_some(),
+                "{name}: no type"
+            );
         }
     }
 }

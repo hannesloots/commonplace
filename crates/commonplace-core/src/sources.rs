@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::frontmatter;
 use crate::fsutil;
 use crate::manifest::{Manifest, SourceRecord};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use regex::Regex;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -48,14 +48,25 @@ pub struct IngestOptions {
 pub fn make_id(title: &str, date: &str) -> String {
     let mut t = fsutil::safe_title(title);
     if t.chars().count() > 80 {
-        t = t.chars().take(80).collect::<String>().trim_end().to_string();
+        t = t
+            .chars()
+            .take(80)
+            .collect::<String>()
+            .trim_end()
+            .to_string();
     }
     format!("{} {}", date, t)
 }
 
-static DATE_PREFIX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d{4}-\d{2}-\d{2})\s+(.+)$").unwrap());
+static DATE_PREFIX_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\d{4}-\d{2}-\d{2})\s+(.+)$").unwrap());
 
-pub fn ingest(root: &Path, config: &Config, src: &Path, opts: &IngestOptions) -> Result<IngestReport> {
+pub fn ingest(
+    root: &Path,
+    config: &Config,
+    src: &Path,
+    opts: &IngestOptions,
+) -> Result<IngestReport> {
     if !src.is_file() {
         bail!("{} is not a file", src.display());
     }
@@ -75,14 +86,24 @@ pub fn ingest(root: &Path, config: &Config, src: &Path, opts: &IngestOptions) ->
                 pages: None,
                 needs_conversion: false,
                 duplicate_of: Some(id.clone()),
-                warnings: vec!["identical file already ingested; nothing done (use --force to ingest again)".into()],
+                warnings: vec![
+                    "identical file already ingested; nothing done (use --force to ingest again)"
+                        .into(),
+                ],
             });
         }
     }
-    let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     let file_stem = fsutil::stem(src);
     let (title, date) = {
-        let t = opts.title.clone().unwrap_or_else(|| file_stem.replace(['_', '-'], " "));
+        let t = opts
+            .title
+            .clone()
+            .unwrap_or_else(|| file_stem.replace(['_', '-'], " "));
         let d = opts.date.clone();
         match DATE_PREFIX_RE.captures(&t) {
             Some(c) if d.is_none() => (c[2].to_string(), c[1].to_string()),
@@ -99,24 +120,41 @@ pub fn ingest(root: &Path, config: &Config, src: &Path, opts: &IngestOptions) ->
     // avoid id collisions (same title+date, different content)
     if manifest.sources.contains_key(&id) || notes_dir.join(format!("{id}.md")).exists() {
         let mut n = 2;
-        while manifest.sources.contains_key(&format!("{id} ({n})")) || notes_dir.join(format!("{id} ({n}).md")).exists() {
+        while manifest.sources.contains_key(&format!("{id} ({n})"))
+            || notes_dir.join(format!("{id} ({n}).md")).exists()
+        {
             n += 1;
         }
         warnings.push(format!("a source named '{id}' already exists; using '{id} ({n})'. If this is the same document in a new version, consider `supersedes`."));
         id = format!("{id} ({n})");
     }
-    let raw_name = if ext.is_empty() { id.clone() } else { format!("{id}.{ext}") };
+    let raw_name = if ext.is_empty() {
+        id.clone()
+    } else {
+        format!("{id}.{ext}")
+    };
     let raw_path = raw_dir.join(&raw_name);
     if opts.move_file {
-        std::fs::rename(src, &raw_path).or_else(|_| std::fs::copy(src, &raw_path).map(|_| ()).and_then(|_| std::fs::remove_file(src)))?;
+        std::fs::rename(src, &raw_path).or_else(|_| {
+            std::fs::copy(src, &raw_path)
+                .map(|_| ())
+                .and_then(|_| std::fs::remove_file(src))
+        })?;
     } else {
-        std::fs::copy(src, &raw_path).with_context(|| format!("copying to {}", raw_path.display()))?;
+        std::fs::copy(src, &raw_path)
+            .with_context(|| format!("copying to {}", raw_path.display()))?;
     }
     set_readonly(&raw_path);
 
     // Convert
     let kind = opts.kind.clone().unwrap_or_else(|| guess_kind(&ext));
-    let conv = convert(&raw_path, &ext, config, opts.converter.as_deref(), opts.origin.as_deref())?;
+    let conv = convert(
+        &raw_path,
+        &ext,
+        config,
+        opts.converter.as_deref(),
+        opts.origin.as_deref(),
+    )?;
     let text_rel = format!("{TEXT_DIR}/{id}.text.md");
     let mut text_sha = None;
     let mut pages = None;
@@ -132,8 +170,16 @@ pub fn ingest(root: &Path, config: &Config, src: &Path, opts: &IngestOptions) ->
         if let Some(p) = c.pages {
             frontmatter::set_value(&mut fm, "pages", serde_yaml::Value::Number(p.into()));
         }
-        frontmatter::set_str(&mut fm, "anchors", if c.pages.is_some() { "page" } else { "line" });
-        frontmatter::set_str(&mut fm, "note", "Faithful rendition of the original. Do not edit; re-convert instead.");
+        frontmatter::set_str(
+            &mut fm,
+            "anchors",
+            if c.pages.is_some() { "page" } else { "line" },
+        );
+        frontmatter::set_str(
+            &mut fm,
+            "note",
+            "Faithful rendition of the original. Do not edit; re-convert instead.",
+        );
         let text = frontmatter::render(&fm, &c.text)?;
         fsutil::write_atomic(&root.join(&text_rel), text.as_bytes())?;
         text_sha = Some(fsutil::sha256_str(&text));
@@ -150,23 +196,52 @@ pub fn ingest(root: &Path, config: &Config, src: &Path, opts: &IngestOptions) ->
     frontmatter::set_str(&mut fm, "title", &title);
     frontmatter::set_str(&mut fm, "kind", &kind);
     frontmatter::set_str(&mut fm, "raw", &format!("{RAW_DIR}/{raw_name}"));
-    frontmatter::set_str(&mut fm, "text", if needs_conversion { "" } else { &text_rel });
+    frontmatter::set_str(
+        &mut fm,
+        "text",
+        if needs_conversion { "" } else { &text_rel },
+    );
     frontmatter::set_str(&mut fm, "origin", opts.origin.as_deref().unwrap_or(""));
     frontmatter::set_str(&mut fm, "retrieved", &fsutil::today());
     frontmatter::set_str(&mut fm, "published", &date);
     frontmatter::set_str(&mut fm, "author", "");
     frontmatter::set_str(&mut fm, "publisher", "");
-    frontmatter::set_str(&mut fm, "authority", opts.authority.as_deref().unwrap_or("primary"));
-    frontmatter::set_str(&mut fm, "confidentiality", opts.confidentiality.as_deref().unwrap_or("personal"));
+    frontmatter::set_str(
+        &mut fm,
+        "authority",
+        opts.authority.as_deref().unwrap_or("primary"),
+    );
+    frontmatter::set_str(
+        &mut fm,
+        "confidentiality",
+        opts.confidentiality.as_deref().unwrap_or("personal"),
+    );
     frontmatter::set_str(&mut fm, "fidelity", &conv.fidelity);
     frontmatter::set_str(&mut fm, "converter", &conv.converter);
-    frontmatter::set_str(&mut fm, "status", if needs_conversion { "registered" } else { "converted" });
-    frontmatter::set_value(&mut fm, "summary_level", serde_yaml::Value::Number(0.into()));
+    frontmatter::set_str(
+        &mut fm,
+        "status",
+        if needs_conversion {
+            "registered"
+        } else {
+            "converted"
+        },
+    );
+    frontmatter::set_value(
+        &mut fm,
+        "summary_level",
+        serde_yaml::Value::Number(0.into()),
+    );
     frontmatter::set_value(&mut fm, "tags", serde_yaml::Value::Sequence(vec![]));
     frontmatter::set_value(
         &mut fm,
         "projects",
-        serde_yaml::Value::Sequence(opts.project.iter().map(|p| serde_yaml::Value::String(format!("[[{p}]]"))).collect()),
+        serde_yaml::Value::Sequence(
+            opts.project
+                .iter()
+                .map(|p| serde_yaml::Value::String(format!("[[{p}]]")))
+                .collect(),
+        ),
     );
     frontmatter::set_str(&mut fm, "description", "");
     frontmatter::set_str(&mut fm, "created", &fsutil::today());
@@ -183,7 +258,11 @@ pub fn ingest(root: &Path, config: &Config, src: &Path, opts: &IngestOptions) ->
         SourceRecord {
             raw: format!("{RAW_DIR}/{raw_name}"),
             raw_sha256: sha.clone(),
-            text: if needs_conversion { None } else { Some(text_rel.clone()) },
+            text: if needs_conversion {
+                None
+            } else {
+                Some(text_rel.clone())
+            },
             text_sha256: text_sha,
             note: Some(note_rel.clone()),
             ingested: fsutil::now_iso(),
@@ -199,7 +278,11 @@ pub fn ingest(root: &Path, config: &Config, src: &Path, opts: &IngestOptions) ->
         id,
         raw: format!("{RAW_DIR}/{raw_name}"),
         raw_sha256: sha,
-        text: if needs_conversion { None } else { Some(text_rel) },
+        text: if needs_conversion {
+            None
+        } else {
+            Some(text_rel)
+        },
         note: note_rel,
         converter: conv.converter,
         fidelity: conv.fidelity,
@@ -254,20 +337,53 @@ pub struct ConvertResult {
 /// installed, in the configured preference order): pdftotext for PDF; pandoc
 /// for docx/odt/rtf/epub; markitdown for office formats. Anything else is left
 /// for the agent (`needs_conversion`).
-pub fn convert(raw: &Path, ext: &str, config: &Config, forced: Option<&str>, origin: Option<&str>) -> Result<ConvertResult> {
-    let none = |reason: &str| ConvertResult { markdown: None, converter: "none".into(), fidelity: "none".into(), reason: reason.into(), warning: None, outline: None };
+pub fn convert(
+    raw: &Path,
+    ext: &str,
+    config: &Config,
+    forced: Option<&str>,
+    origin: Option<&str>,
+) -> Result<ConvertResult> {
+    let none = |reason: &str| ConvertResult {
+        markdown: None,
+        converter: "none".into(),
+        fidelity: "none".into(),
+        reason: reason.into(),
+        warning: None,
+        outline: None,
+    };
     match ext {
         "md" | "markdown" | "txt" | "text" => {
             let t = std::fs::read_to_string(raw)?;
             let t = strip_frontmatter(&t);
             let outline = outline_from_markdown(&t);
-            return Ok(ConvertResult { markdown: Some(Converted { text: t, pages: None }), converter: "copy".into(), fidelity: "high".into(), reason: String::new(), warning: None, outline });
+            return Ok(ConvertResult {
+                markdown: Some(Converted {
+                    text: t,
+                    pages: None,
+                }),
+                converter: "copy".into(),
+                fidelity: "high".into(),
+                reason: String::new(),
+                warning: None,
+                outline,
+            });
         }
         "html" | "htm" => {
             let h = std::fs::read_to_string(raw)?;
             let md = html_to_markdown(&h, origin)?;
             let outline = outline_from_markdown(&md);
-            return Ok(ConvertResult { markdown: Some(Converted { text: md, pages: None }), converter: "htmd".into(), fidelity: "high".into(), reason: String::new(), warning: None, outline });
+            return Ok(ConvertResult {
+                markdown: Some(Converted {
+                    text: md,
+                    pages: None,
+                }),
+                converter: "htmd".into(),
+                fidelity: "high".into(),
+                reason: String::new(),
+                warning: None,
+                outline,
+            });
         }
         _ => {}
     }
@@ -283,25 +399,64 @@ pub fn convert(raw: &Path, ext: &str, config: &Config, forced: Option<&str>, ori
         }
         match (name.as_str(), ext) {
             ("pdftotext", "pdf") => {
-                let out = std::process::Command::new("pdftotext").args(["-layout", "-enc", "UTF-8"]).arg(raw).arg("-").output()?;
+                let out = std::process::Command::new("pdftotext")
+                    .args(["-layout", "-enc", "UTF-8"])
+                    .arg(raw)
+                    .arg("-")
+                    .output()?;
                 if !out.status.success() {
                     continue;
                 }
                 let txt = String::from_utf8_lossy(&out.stdout).to_string();
                 let (text, pages) = page_markers_from_formfeeds(&txt);
-                let chars_per_page = if pages > 0 { text.len() / pages } else { text.len() };
-                let fidelity = if chars_per_page < 200 { "low" } else { "medium" };
-                let warning = if chars_per_page < 200 { Some("very little text per page: probably a scanned PDF that needs OCR (docling/marker) or manual conversion".into()) } else { None };
-                return Ok(ConvertResult { markdown: Some(Converted { text, pages: Some(pages) }), converter: "pdftotext".into(), fidelity: fidelity.into(), reason: String::new(), warning, outline: None });
+                let chars_per_page = if pages > 0 {
+                    text.len() / pages
+                } else {
+                    text.len()
+                };
+                let fidelity = if chars_per_page < 200 {
+                    "low"
+                } else {
+                    "medium"
+                };
+                let warning = if chars_per_page < 200 {
+                    Some("very little text per page: probably a scanned PDF that needs OCR (docling/marker) or manual conversion".into())
+                } else {
+                    None
+                };
+                return Ok(ConvertResult {
+                    markdown: Some(Converted {
+                        text,
+                        pages: Some(pages),
+                    }),
+                    converter: "pdftotext".into(),
+                    fidelity: fidelity.into(),
+                    reason: String::new(),
+                    warning,
+                    outline: None,
+                });
             }
             ("pandoc", "docx" | "odt" | "rtf" | "epub" | "html") => {
-                let out = std::process::Command::new("pandoc").arg(raw).args(["-t", "gfm", "--wrap=none"]).output()?;
+                let out = std::process::Command::new("pandoc")
+                    .arg(raw)
+                    .args(["-t", "gfm", "--wrap=none"])
+                    .output()?;
                 if !out.status.success() {
                     continue;
                 }
                 let md = String::from_utf8_lossy(&out.stdout).to_string();
                 let outline = outline_from_markdown(&md);
-                return Ok(ConvertResult { markdown: Some(Converted { text: md, pages: None }), converter: "pandoc".into(), fidelity: "high".into(), reason: String::new(), warning: None, outline });
+                return Ok(ConvertResult {
+                    markdown: Some(Converted {
+                        text: md,
+                        pages: None,
+                    }),
+                    converter: "pandoc".into(),
+                    fidelity: "high".into(),
+                    reason: String::new(),
+                    warning: None,
+                    outline,
+                });
             }
             ("markitdown", "docx" | "pptx" | "xlsx" | "pdf") => {
                 let out = std::process::Command::new("markitdown").arg(raw).output()?;
@@ -311,31 +466,59 @@ pub fn convert(raw: &Path, ext: &str, config: &Config, forced: Option<&str>, ori
                 let md = String::from_utf8_lossy(&out.stdout).to_string();
                 let outline = outline_from_markdown(&md);
                 let fid = if ext == "pdf" { "medium" } else { "high" };
-                return Ok(ConvertResult { markdown: Some(Converted { text: md, pages: None }), converter: "markitdown".into(), fidelity: fid.into(), reason: String::new(), warning: if ext == "pdf" { Some("markitdown drops page boundaries; add <!-- page:N --> markers or re-convert with pdftotext for page-level citations".into()) } else { None }, outline });
+                return Ok(ConvertResult {
+                    markdown: Some(Converted {
+                        text: md,
+                        pages: None,
+                    }),
+                    converter: "markitdown".into(),
+                    fidelity: fid.into(),
+                    reason: String::new(),
+                    warning: if ext == "pdf" {
+                        Some("markitdown drops page boundaries; add <!-- page:N --> markers or re-convert with pdftotext for page-level citations".into())
+                    } else {
+                        None
+                    },
+                    outline,
+                });
             }
             _ => continue,
         }
     }
-    Ok(none(&format!("no installed converter handles .{ext} (available: {})", if available.is_empty() { "none".to_string() } else { available.join(", ") })))
+    Ok(none(&format!(
+        "no installed converter handles .{ext} (available: {})",
+        if available.is_empty() {
+            "none".to_string()
+        } else {
+            available.join(", ")
+        }
+    )))
 }
 
 /// Tags dropped from web pages: site chrome, not content. The article itself
 /// (headings, paragraphs, tables, lists, links) is kept verbatim.
-const HTML_SKIP_TAGS: &[&str] = &["script", "style", "noscript", "template", "iframe", "svg", "nav", "footer"];
+const HTML_SKIP_TAGS: &[&str] = &[
+    "script", "style", "noscript", "template", "iframe", "svg", "nav", "footer",
+];
 
 /// HTML -> markdown. Site chrome is dropped and every relative link or image is
 /// resolved against `origin`, so the text layer holds no links that a vault
 /// viewer such as Obsidian would read as links to local files.
 pub fn html_to_markdown(html: &str, origin: Option<&str>) -> Result<String> {
-    let conv = htmd::HtmlToMarkdown::builder().skip_tags(HTML_SKIP_TAGS.to_vec()).build();
-    let md = conv.convert(html).map_err(|e| anyhow!("html conversion failed: {e}"))?;
+    let conv = htmd::HtmlToMarkdown::builder()
+        .skip_tags(HTML_SKIP_TAGS.to_vec())
+        .build();
+    let md = conv
+        .convert(html)
+        .map_err(|e| anyhow!("html conversion failed: {e}"))?;
     Ok(match origin {
         Some(o) if o.contains("://") => absolutise_links(&md, o, |_| false).0,
         _ => md,
     })
 }
 
-static MD_LINK_URL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\]\(<?([^)\s<>]+)>?").unwrap());
+static MD_LINK_URL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\]\(<?([^)\s<>]+)>?").unwrap());
 
 /// Rewrite relative markdown link and image targets to absolute URLs against
 /// `base`. `keep(href)` returning true leaves that target alone (used to
@@ -362,7 +545,8 @@ pub fn absolutise_links(md: &str, base: &str, keep: impl Fn(&str) -> bool) -> (S
 /// Resolve `href` against `base` (an absolute http(s) URL). Returns None when
 /// the target is already absolute, a fragment, or a non-web scheme.
 pub fn resolve_url(base: &str, href: &str) -> Option<String> {
-    static SCHEME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+.\-]*:").unwrap());
+    static SCHEME_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+.\-]*:").unwrap());
     if href.is_empty() || href.starts_with('#') || SCHEME_RE.is_match(href) {
         return None;
     }
@@ -382,7 +566,10 @@ pub fn resolve_url(base: &str, href: &str) -> Option<String> {
         return Some(format!("{scheme}://{host}{path}{href}"));
     }
     let dir = &path[..=path.rfind('/').unwrap_or(0)];
-    Some(format!("{scheme}://{host}{}", normalise_path(&format!("{dir}{href}"))))
+    Some(format!(
+        "{scheme}://{host}{}",
+        normalise_path(&format!("{dir}{href}"))
+    ))
 }
 
 fn normalise_path(p: &str) -> String {
@@ -425,8 +612,17 @@ pub struct RelinkReport {
 /// numbers do not move, so `L` locators and quotes stay valid.
 pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
     let mut manifest = Manifest::load(root)?;
-    let rec = manifest.sources.get_mut(id).ok_or_else(|| anyhow!("unknown source id '{id}'"))?;
-    let mut rep = RelinkReport { id: id.to_string(), origin: rec.origin.clone(), files_changed: vec![], links_rewritten: 0, skipped: None };
+    let rec = manifest
+        .sources
+        .get_mut(id)
+        .ok_or_else(|| anyhow!("unknown source id '{id}'"))?;
+    let mut rep = RelinkReport {
+        id: id.to_string(),
+        origin: rec.origin.clone(),
+        files_changed: vec![],
+        links_rewritten: 0,
+        skipped: None,
+    };
     let Some(origin) = rec.origin.clone().filter(|o| o.contains("://")) else {
         rep.skipped = Some("no web origin recorded for this source (set `origin` in .commonplace/manifest.json or re-ingest with --origin)".into());
         return Ok(rep);
@@ -436,10 +632,18 @@ pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
         if p.is_file() {
             targets.push(p);
         } else {
-            targets.extend(std::fs::read_dir(&p)?.flatten().map(|e| e.path()).filter(|f| fsutil::is_markdown(f)));
+            targets.extend(
+                std::fs::read_dir(&p)?
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|f| fsutil::is_markdown(f)),
+            );
         }
     }
-    let note_rel = rec.note.clone().unwrap_or_else(|| format!("{NOTES_DIR}/{id}.md"));
+    let note_rel = rec
+        .note
+        .clone()
+        .unwrap_or_else(|| format!("{NOTES_DIR}/{id}.md"));
     let note_path = root.join(&note_rel);
     if note_path.is_file() {
         targets.push(note_path);
@@ -460,7 +664,15 @@ pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
     }
     if rep.links_rewritten > 0 {
         if let Some(p) = text_layer_path(root, id) {
-            let hash = if p.is_file() { fsutil::sha256_str(&std::fs::read_to_string(&p)?) } else { fsutil::sha256_str(&load_text_layer(root, id)?.map(|t| t.text).unwrap_or_default()) };
+            let hash = if p.is_file() {
+                fsutil::sha256_str(&std::fs::read_to_string(&p)?)
+            } else {
+                fsutil::sha256_str(
+                    &load_text_layer(root, id)?
+                        .map(|t| t.text)
+                        .unwrap_or_default(),
+                )
+            };
             rec.text_sha256 = Some(hash);
         }
         manifest.save(root)?;
@@ -469,11 +681,29 @@ pub fn relink(root: &Path, id: &str) -> Result<RelinkReport> {
 }
 
 pub fn available_converters() -> Vec<String> {
-    ["docling", "marker_single", "markitdown", "pandoc", "pdftotext"].iter().filter(|c| which(c)).map(|c| if *c == "marker_single" { "marker".to_string() } else { c.to_string() }).collect()
+    [
+        "docling",
+        "marker_single",
+        "markitdown",
+        "pandoc",
+        "pdftotext",
+    ]
+    .iter()
+    .filter(|c| which(c))
+    .map(|c| {
+        if *c == "marker_single" {
+            "marker".to_string()
+        } else {
+            c.to_string()
+        }
+    })
+    .collect()
 }
 
 pub fn which(cmd: &str) -> bool {
-    let Some(paths) = std::env::var_os("PATH") else { return false };
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
     std::env::split_paths(&paths).any(|d| {
         let p = d.join(cmd);
         p.is_file() || d.join(format!("{cmd}.exe")).is_file()
@@ -510,7 +740,11 @@ fn outline_from_markdown(md: &str) -> Option<String> {
     }
     let mut s = String::new();
     for h in hs.iter().take(60) {
-        s.push_str(&format!("{}- {}\n", "  ".repeat(h.level.saturating_sub(1)), h.text));
+        s.push_str(&format!(
+            "{}- {}\n",
+            "  ".repeat(h.level.saturating_sub(1)),
+            h.text
+        ));
     }
     Some(s)
 }
@@ -556,14 +790,27 @@ pub fn text_layer_path(root: &Path, id: &str) -> Option<PathBuf> {
 }
 
 pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
-    let Some(p) = text_layer_path(root, id) else { return Ok(None) };
+    let Some(p) = text_layer_path(root, id) else {
+        return Ok(None);
+    };
     if p.is_file() {
         let t = std::fs::read_to_string(&p)?;
         let body = strip_frontmatter(&t);
         let lines = body.lines().count();
-        return Ok(Some(TextLayer { text: body, parts: vec![TextPart { rel: fsutil::rel(root, &p), start_line: 1, lines }] }));
+        return Ok(Some(TextLayer {
+            text: body,
+            parts: vec![TextPart {
+                rel: fsutil::rel(root, &p),
+                start_line: 1,
+                lines,
+            }],
+        }));
     }
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&p)?.flatten().map(|e| e.path()).filter(|f| fsutil::is_markdown(f)).collect();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&p)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|f| fsutil::is_markdown(f))
+        .collect();
     files.sort();
     let mut text = String::new();
     let mut parts = vec![];
@@ -572,11 +819,14 @@ pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
         let t = std::fs::read_to_string(&f)?;
         let doc = frontmatter::parse(&t).unwrap_or_default();
         let mut header = String::new();
-        let sec = frontmatter::get_str(&doc.fm, "section").or_else(|| frontmatter::get_str(&doc.fm, "section_id"));
+        let sec = frontmatter::get_str(&doc.fm, "section")
+            .or_else(|| frontmatter::get_str(&doc.fm, "section_id"));
         if let Some(s) = sec {
             header.push_str(&format!("<!-- section:{s} -->\n"));
         }
-        if let Some(pf) = frontmatter::get_str(&doc.fm, "page_from").or_else(|| frontmatter::get_str(&doc.fm, "pages_from")) {
+        if let Some(pf) = frontmatter::get_str(&doc.fm, "page_from")
+            .or_else(|| frontmatter::get_str(&doc.fm, "pages_from"))
+        {
             if !doc.body.contains("<!-- page:") {
                 header.push_str(&format!("<!-- page:{pf} -->\n"));
             }
@@ -589,7 +839,11 @@ pub fn load_text_layer(root: &Path, id: &str) -> Result<Option<TextLayer>> {
         if !body.ends_with('\n') {
             text.push('\n');
         }
-        parts.push(TextPart { rel: fsutil::rel(root, &f), start_line: cur_line + header_lines, lines: body_lines });
+        parts.push(TextPart {
+            rel: fsutil::rel(root, &f),
+            start_line: cur_line + header_lines,
+            lines: body_lines,
+        });
         cur_line += header_lines + body_lines;
     }
     Ok(Some(TextLayer { text, parts }))
@@ -609,7 +863,11 @@ pub fn verify_integrity(root: &Path) -> Result<Vec<VerifyEntry>> {
     let mut out = vec![];
     for (id, rec) in &manifest.sources {
         let raw_path = root.join(&rec.raw);
-        let raw_ok = if raw_path.is_file() { Some(fsutil::sha256_file(&raw_path)? == rec.raw_sha256) } else { None };
+        let raw_ok = if raw_path.is_file() {
+            Some(fsutil::sha256_file(&raw_path)? == rec.raw_sha256)
+        } else {
+            None
+        };
         let text_ok = match (&rec.text, &rec.text_sha256) {
             (Some(t), Some(h)) => {
                 let p = root.join(t);
@@ -627,7 +885,12 @@ pub fn verify_integrity(root: &Path) -> Result<Vec<VerifyEntry>> {
             (_, Some(false)) => "text layer edited since ingest (citations may be stale; re-run `commonplace source attach-text` if intentional)".to_string(),
             _ => "ok".to_string(),
         };
-        out.push(VerifyEntry { id: id.clone(), raw_ok, text_ok, message });
+        out.push(VerifyEntry {
+            id: id.clone(),
+            raw_ok,
+            text_ok,
+            message,
+        });
     }
     Ok(out)
 }
@@ -636,14 +899,30 @@ pub fn verify_integrity(root: &Path) -> Result<Vec<VerifyEntry>> {
 /// (sets hashes, updates the note's `text`/`status`/`fidelity`).
 pub fn attach_text(root: &Path, id: &str, converter: &str, fidelity: &str) -> Result<String> {
     let mut manifest = Manifest::load(root)?;
-    let rec = manifest.sources.get_mut(id).ok_or_else(|| anyhow!("unknown source id '{id}'"))?;
-    let p = text_layer_path(root, id).ok_or_else(|| anyhow!("no text layer found at {TEXT_DIR}/{id}.text.md or {TEXT_DIR}/{id}/"))?;
+    let rec = manifest
+        .sources
+        .get_mut(id)
+        .ok_or_else(|| anyhow!("unknown source id '{id}'"))?;
+    let p = text_layer_path(root, id).ok_or_else(|| {
+        anyhow!("no text layer found at {TEXT_DIR}/{id}.text.md or {TEXT_DIR}/{id}/")
+    })?;
     let rel = fsutil::rel(root, &p);
-    let hash = if p.is_file() { fsutil::sha256_str(&std::fs::read_to_string(&p)?) } else { fsutil::sha256_str(&load_text_layer(root, id)?.map(|t| t.text).unwrap_or_default()) };
+    let hash = if p.is_file() {
+        fsutil::sha256_str(&std::fs::read_to_string(&p)?)
+    } else {
+        fsutil::sha256_str(
+            &load_text_layer(root, id)?
+                .map(|t| t.text)
+                .unwrap_or_default(),
+        )
+    };
     rec.text = Some(rel.clone());
     rec.text_sha256 = Some(hash);
     rec.converter = Some(converter.to_string());
-    let note_rel = rec.note.clone().unwrap_or_else(|| format!("{NOTES_DIR}/{id}.md"));
+    let note_rel = rec
+        .note
+        .clone()
+        .unwrap_or_else(|| format!("{NOTES_DIR}/{id}.md"));
     manifest.save(root)?;
     let note_path = root.join(&note_rel);
     if note_path.is_file() {
@@ -656,14 +935,19 @@ pub fn attach_text(root: &Path, id: &str, converter: &str, fidelity: &str) -> Re
             frontmatter::set_str(&mut doc.fm, "status", "converted");
         }
         frontmatter::set_str(&mut doc.fm, "updated", &fsutil::today());
-        fsutil::write_atomic(&note_path, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())?;
+        fsutil::write_atomic(
+            &note_path,
+            frontmatter::render(&doc.fm, &doc.body)?.as_bytes(),
+        )?;
     }
     Ok(rel)
 }
 
 /// Source ids known to the manifest or present as notes.
 pub fn known_source_ids(root: &Path) -> Vec<String> {
-    let mut ids: Vec<String> = Manifest::load(root).map(|m| m.sources.keys().cloned().collect()).unwrap_or_default();
+    let mut ids: Vec<String> = Manifest::load(root)
+        .map(|m| m.sources.keys().cloned().collect())
+        .unwrap_or_default();
     if let Ok(rd) = std::fs::read_dir(root.join(NOTES_DIR)) {
         for e in rd.flatten() {
             if fsutil::is_markdown(&e.path()) {
@@ -681,19 +965,40 @@ pub fn known_source_ids(root: &Path) -> Vec<String> {
 mod tests {
     use super::*;
 
-    const BASE: &str = "https://www.privatehealth.gov.au/health_insurance/howitworks/waiting_periods.htm?x=1#top";
+    const BASE: &str =
+        "https://www.privatehealth.gov.au/health_insurance/howitworks/waiting_periods.htm?x=1#top";
 
     #[test]
     fn resolves_relative_links() {
-        assert_eq!(resolve_url(BASE, "/faq.htm").as_deref(), Some("https://www.privatehealth.gov.au/faq.htm"));
-        assert_eq!(resolve_url(BASE, "out_of_pocket.htm").as_deref(), Some("https://www.privatehealth.gov.au/health_insurance/howitworks/out_of_pocket.htm"));
-        assert_eq!(resolve_url(BASE, "../index.htm").as_deref(), Some("https://www.privatehealth.gov.au/health_insurance/index.htm"));
-        assert_eq!(resolve_url(BASE, "//cdn.example.org/a.svg").as_deref(), Some("https://cdn.example.org/a.svg"));
-        assert_eq!(resolve_url(BASE, "?page=2").as_deref(), Some("https://www.privatehealth.gov.au/health_insurance/howitworks/waiting_periods.htm?page=2"));
+        assert_eq!(
+            resolve_url(BASE, "/faq.htm").as_deref(),
+            Some("https://www.privatehealth.gov.au/faq.htm")
+        );
+        assert_eq!(
+            resolve_url(BASE, "out_of_pocket.htm").as_deref(),
+            Some("https://www.privatehealth.gov.au/health_insurance/howitworks/out_of_pocket.htm")
+        );
+        assert_eq!(
+            resolve_url(BASE, "../index.htm").as_deref(),
+            Some("https://www.privatehealth.gov.au/health_insurance/index.htm")
+        );
+        assert_eq!(
+            resolve_url(BASE, "//cdn.example.org/a.svg").as_deref(),
+            Some("https://cdn.example.org/a.svg")
+        );
+        assert_eq!(
+            resolve_url(BASE, "?page=2").as_deref(),
+            Some(
+                "https://www.privatehealth.gov.au/health_insurance/howitworks/waiting_periods.htm?page=2"
+            )
+        );
         assert_eq!(resolve_url(BASE, "https://ato.gov.au/x"), None);
         assert_eq!(resolve_url(BASE, "#section"), None);
         assert_eq!(resolve_url(BASE, "mailto:a@b.c"), None);
-        assert_eq!(resolve_url("https://example.org", "a/b.htm").as_deref(), Some("https://example.org/a/b.htm"));
+        assert_eq!(
+            resolve_url("https://example.org", "a/b.htm").as_deref(),
+            Some("https://example.org/a/b.htm")
+        );
     }
 
     #[test]

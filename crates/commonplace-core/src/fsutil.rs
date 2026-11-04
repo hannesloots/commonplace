@@ -6,11 +6,16 @@ use std::path::{Path, PathBuf};
 
 pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
     }
-    let tmp = path.with_extension(format!("{}.tmp~", path.extension().and_then(|e| e.to_str()).unwrap_or("")));
+    let tmp = path.with_extension(format!(
+        "{}.tmp~",
+        path.extension().and_then(|e| e.to_str()).unwrap_or("")
+    ));
     std::fs::write(&tmp, data).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("renaming {} to {}", tmp.display(), path.display()))?;
+    std::fs::rename(&tmp, path)
+        .with_context(|| format!("renaming {} to {}", tmp.display(), path.display()))?;
     Ok(())
 }
 
@@ -34,7 +39,10 @@ pub fn sha256_str(s: &str) -> String {
 }
 
 pub fn rel(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/")
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// Lowercase kebab-case slug, ASCII only, trimmed to `max` chars.
@@ -83,13 +91,21 @@ pub fn now_iso() -> String {
 }
 
 pub fn is_markdown(p: &Path) -> bool {
-    p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("md")).unwrap_or(false)
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("md"))
+        .unwrap_or(false)
 }
 
 pub fn stem(p: &Path) -> String {
-    p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
+    p.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
 }

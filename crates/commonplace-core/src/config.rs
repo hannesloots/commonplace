@@ -1,6 +1,6 @@
 //! commonplace.toml and root discovery.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -103,22 +103,42 @@ impl Default for Config {
 }
 impl Default for IndexConfig {
     fn default() -> Self {
-        Self { hub_threshold: 60, max_index_lines: 200 }
+        Self {
+            hub_threshold: 60,
+            max_index_lines: 200,
+        }
     }
 }
 impl Default for LintConfig {
     fn default() -> Self {
-        Self { stale_days: 180, retired_terms: vec![], disabled_rules: vec![], max_words: 2500, quote_min_words: 3, quote_max_words: 80 }
+        Self {
+            stale_days: 180,
+            retired_terms: vec![],
+            disabled_rules: vec![],
+            max_words: 2500,
+            quote_min_words: 3,
+            quote_max_words: 80,
+        }
     }
 }
 impl Default for ConvertersConfig {
     fn default() -> Self {
-        Self { prefer: vec!["docling".into(), "marker".into(), "markitdown".into(), "pandoc".into(), "pdftotext".into()] }
+        Self {
+            prefer: vec![
+                "docling".into(),
+                "marker".into(),
+                "markitdown".into(),
+                "pandoc".into(),
+                "pdftotext".into(),
+            ],
+        }
     }
 }
 impl Default for PrivacyConfig {
     fn default() -> Self {
-        Self { exclude_from_export: vec!["privileged".into(), "confidential".into()] }
+        Self {
+            exclude_from_export: vec!["privileged".into(), "confidential".into()],
+        }
     }
 }
 impl Default for ReviewConfig {
@@ -131,7 +151,8 @@ impl Config {
     pub fn load(root: &Path) -> Result<Self> {
         let p = config_path(root);
         let s = std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
-        let mut c: Config = toml::from_str(&s).with_context(|| format!("parsing {}", p.display()))?;
+        let mut c: Config =
+            toml::from_str(&s).with_context(|| format!("parsing {}", p.display()))?;
         // compatibility: the pre-0.3 `sa-legal` pack is `legal` with jurisdiction za
         let mut packs = vec![];
         for p in &c.packs {
@@ -164,5 +185,8 @@ pub fn find_root(start: &Path) -> Result<PathBuf> {
         }
         cur = dir.parent().map(|p| p.to_path_buf());
     }
-    Err(anyhow!("no {CONFIG_FILE} found in {} or its parents (run `commonplace init` or pass --root)", start.display()))
+    Err(anyhow!(
+        "no {CONFIG_FILE} found in {} or its parents (run `commonplace init` or pass --root)",
+        start.display()
+    ))
 }

@@ -231,17 +231,17 @@ impl Graph {
         direction: &str,
         limit: usize,
     ) -> Vec<Vec<String>> {
-        let (Some(a), Some(b)) = (self.node(from), self.node(to)) else {
+        let (Some(start), Some(goal)) = (self.node(from), self.node(to)) else {
             return vec![];
         };
-        let target = b.id.to_lowercase();
+        let target = goal.id.to_lowercase();
         let mut results: Vec<Vec<String>> = vec![];
-        let mut q: VecDeque<(String, Vec<String>, HashSet<String>)> = VecDeque::new();
+        let mut queue: VecDeque<(String, Vec<String>, HashSet<String>)> = VecDeque::new();
         let mut start_seen = HashSet::new();
-        start_seen.insert(a.id.to_lowercase());
-        q.push_back((a.id.clone(), vec![a.id.clone()], start_seen));
+        start_seen.insert(start.id.to_lowercase());
+        queue.push_back((start.id.clone(), vec![start.id.clone()], start_seen));
         let mut best_len: Option<usize> = None;
-        while let Some((id, path, visited)) = q.pop_front() {
+        while let Some((id, path, visited)) = queue.pop_front() {
             if let Some(bl) = best_len
                 && path.len() > bl
             {
@@ -272,7 +272,7 @@ impl Graph {
                 }
                 let mut v = visited.clone();
                 v.insert(other.to_lowercase());
-                q.push_back((other, p, v));
+                queue.push_back((other, p, v));
             }
         }
         results
@@ -325,7 +325,7 @@ impl Graph {
                 )
             })
             .collect();
-        deg.sort_by(|a, b| (b.1 + b.2).cmp(&(a.1 + a.2)));
+        deg.sort_by_key(|d| std::cmp::Reverse(d.1 + d.2));
         let hubs: Vec<(String, usize)> = deg
             .iter()
             .take(10)

@@ -63,10 +63,6 @@ pub enum Locator {
 }
 
 pub fn parse_locator(s: &str) -> Locator {
-    let t = s.trim().trim_end_matches(',').trim();
-    if t.is_empty() || t.eq_ignore_ascii_case("whole") {
-        return Locator::Whole;
-    }
     static L_RE: LazyLock<Regex> =
         LazyLock::new(|| crate::re(r"(?i)^(?:L|lines?\s*)(\d+)(?:\s*[-–]\s*L?(\d+))?$"));
     static P_RE: LazyLock<Regex> =
@@ -79,6 +75,10 @@ pub fn parse_locator(s: &str) -> Locator {
     static SEC_RE: LazyLock<Regex> = LazyLock::new(|| {
         crate::re(r"(?i)^(?:§|sec(?:tion)?\.?\s*|s\.?\s+)\s*([0-9A-Za-z][0-9A-Za-z.\-()]*)$")
     });
+    let t = s.trim().trim_end_matches(',').trim();
+    if t.is_empty() || t.eq_ignore_ascii_case("whole") {
+        return Locator::Whole;
+    }
     if let Some(c) = L_RE.captures(t) {
         let a: usize = c[1].parse().unwrap_or(1);
         let b: usize = c.get(2).map_or(a, |m| m.as_str().parse().unwrap_or(a));

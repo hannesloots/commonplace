@@ -139,7 +139,7 @@ pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Res
         let mut pack: Pack =
             serde_yaml::from_value(value).with_context(|| format!("parsing {}", p.display()))?;
         if pack.name.is_empty() {
-            pack.name = n.clone();
+            pack.name.clone_from(&n);
         }
         pack.jurisdiction = profile;
         out.push(pack);

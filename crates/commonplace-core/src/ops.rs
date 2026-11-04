@@ -88,7 +88,7 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
                 }
                 let path = line[3..].trim();
                 let path = path.rsplit(" -> ").next().unwrap_or(path).trim_matches('"');
-                if path.ends_with(".md") {
+                if fsutil::is_markdown(Path::new(path)) {
                     set.insert(path.to_string());
                 }
             }
@@ -101,7 +101,7 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
                     .output();
                 if let Ok(o2) = o2 {
                     for line in String::from_utf8_lossy(&o2.stdout).lines() {
-                        if line.ends_with(".md") {
+                        if fsutil::is_markdown(Path::new(line.trim())) {
                             set.insert(line.trim().to_string());
                         }
                     }
@@ -291,7 +291,9 @@ pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceR
         let want_type = &chain[k + 1];
         let mut next: Vec<Vec<String>> = vec![];
         for row in rows {
-            let last = row.last().unwrap().clone();
+            let Some(last) = row.last().cloned() else {
+                continue;
+            };
             if last == "—" {
                 let mut r = row.clone();
                 r.push("—".into());
@@ -514,7 +516,7 @@ pub fn status(vault: &Vault) -> Result<Status> {
         ..Default::default()
     };
     let manifest = crate::manifest::Manifest::load(&vault.root)?;
-    s.last_lint = manifest.last_lint.clone();
+    s.last_lint.clone_from(&manifest.last_lint);
     for p in &vault.pages {
         *s.by_type
             .entry(if p.ptype.is_empty() {
@@ -844,14 +846,9 @@ fn renumber_footnotes(body: &str, counter: &mut usize) -> String {
 }
 
 pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
-    let page = vault
-        .resolve_page(target)
-        .ok_or_else(|| anyhow!("no page named '{target}'"))?;
-    let idx = vault
-        .pages
-        .iter()
-        .position(|p| std::ptr::eq(p, page))
-        .unwrap();
+    let crate::vault::Resolution::Found(idx) = vault.resolve(target) else {
+        bail!("no page named '{target}'");
+    };
     let bl = vault.backlinks();
     let mut v: Vec<String> = bl
         .get(&idx)

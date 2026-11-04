@@ -304,8 +304,7 @@ fn set_readonly(p: &Path) {
 
 pub fn guess_kind(ext: &str) -> String {
     match ext {
-        "pdf" => "document",
-        "docx" | "doc" | "odt" | "rtf" => "document",
+        "pdf" | "docx" | "doc" | "odt" | "rtf" => "document",
         "pptx" | "ppt" => "slides",
         "xlsx" | "csv" | "json" => "dataset",
         "html" | "htm" => "web",
@@ -408,13 +407,9 @@ pub fn convert(
                 if !out.status.success() {
                     continue;
                 }
-                let txt = String::from_utf8_lossy(&out.stdout).to_string();
-                let (text, pages) = page_markers_from_formfeeds(&txt);
-                let chars_per_page = if pages > 0 {
-                    text.len() / pages
-                } else {
-                    text.len()
-                };
+                let raw = String::from_utf8_lossy(&out.stdout).to_string();
+                let (text, pages) = page_markers_from_formfeeds(&raw);
+                let chars_per_page = text.len().checked_div(pages).unwrap_or(text.len());
                 let fidelity = if chars_per_page < 200 {
                     "low"
                 } else {
@@ -483,7 +478,7 @@ pub fn convert(
                     outline,
                 });
             }
-            _ => continue,
+            _ => {}
         }
     }
     Ok(none(&format!(

@@ -123,11 +123,13 @@ impl Vault {
             by_alias: HashMap::new(),
             by_rel: HashMap::new(),
         };
-        v.load_pages()?;
+        v.load_pages();
         Ok(v)
     }
 
-    fn load_pages(&mut self) -> Result<()> {
+    /// Load every markdown page; a page that fails to parse is kept with a
+    /// `parse_error` so lint can report it instead of aborting the load.
+    fn load_pages(&mut self) {
         let mut pages = vec![];
         for entry in walk_markdown(&self.root) {
             let path = entry;
@@ -152,7 +154,6 @@ impl Vault {
         pages.sort_by(|a, b| a.rel.cmp(&b.rel));
         self.pages = pages;
         self.reindex();
-        Ok(())
     }
 
     pub fn reindex(&mut self) {

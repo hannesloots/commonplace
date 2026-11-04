@@ -376,7 +376,7 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
         let mut cur = String::new();
         for q in &members {
             if q.ptype != cur {
-                cur = q.ptype.clone();
+                cur.clone_from(&q.ptype);
                 let _ = writeln!(block, "**{}**", capitalise(&cur));
             }
             block.push_str(&line_for(q));

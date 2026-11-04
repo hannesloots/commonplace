@@ -43,7 +43,8 @@ pub fn mask_code(text: &str) -> String {
             }
             (Some(_), _) => out.push_str(&blank(line)),
             (None, None) => {
-                let masked = INLINE_CODE_RE.replace_all(line, |m: &regex::Captures<'_>| blank(&m[0]));
+                let masked =
+                    INLINE_CODE_RE.replace_all(line, |m: &regex::Captures<'_>| blank(&m[0]));
                 out.push_str(&masked);
             }
         }

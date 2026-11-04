@@ -140,7 +140,7 @@ pub const DIRS: &[&str] = &[
 pub fn known_packs() -> Vec<String> {
     let mut v: Vec<String> = PACK_FILES
         .iter()
-        .map(|(p, _)| p.split('/').next().unwrap().to_string())
+        .map(|(p, _)| p.split_once('/').map_or(*p, |(pack, _)| pack).to_string())
         .collect();
     v.dedup();
     v

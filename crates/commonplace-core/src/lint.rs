@@ -155,32 +155,29 @@ pub fn core_type(t: &str) -> Option<TypeRules> {
     }
 }
 
-static TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)?$").unwrap()
-});
-static DATE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
+static TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| crate::re(r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)?$"));
+static DATE_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"^\d{4}-\d{2}-\d{2}"));
 static LOG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^## \[\d{4}-\d{2}-\d{2}\] [a-z\-]+ \| .+").unwrap());
+    LazyLock::new(|| crate::re(r"^## \[\d{4}-\d{2}-\d{2}\] [a-z\-]+ \| .+"));
 static SECRET_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:sk-[a-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY|ghp_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9\-]{10,}|AIza[0-9A-Za-z\-_]{30,})").unwrap()
+    crate::re(
+        r"(?i)(?:sk-[a-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY|ghp_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9\-]{10,}|AIza[0-9A-Za-z\-_]{30,})",
+    )
 });
 static CURRENT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:currently|at present|as of now|the latest|state[- ]of[- ]the[- ]art|right now)\b").unwrap()
+    crate::re(
+        r"(?i)\b(?:currently|at present|as of now|the latest|state[- ]of[- ]the[- ]art|right now)\b",
+    )
 });
 
 fn registered_tags(vault: &Vault) -> Option<HashSet<String>> {
     let p = vault.root.join("TAGS.md");
     let text = std::fs::read_to_string(p).ok()?;
-    let re = Regex::new(r"(?s)^## Active\s*$(.*?)(?:^## |\z)").unwrap();
-    let section = regex::RegexBuilder::new(r"^## Active\s*$(.*?)(?:^## |\z)")
-        .multi_line(true)
-        .dot_matches_new_line(true)
-        .build()
-        .unwrap()
+    let section = crate::re(r"(?ms)^## Active\s*$(.*?)(?:^## |\z)")
         .captures(&text)
-        .map(|c| c[1].to_string())
-        .or_else(|| re.captures(&text).map(|c| c[1].to_string()))?;
-    let item = Regex::new(r"(?m)^\s*-\s*`([^`]+)`").unwrap();
+        .map(|c| c[1].to_string())?;
+    let item = crate::re(r"(?m)^\s*-\s*`([^`]+)`");
     Some(
         item.captures_iter(&section)
             .map(|c| c[1].to_string())

@@ -165,9 +165,8 @@ pub fn available_jurisdictions(jdir: &Path) -> Vec<String> {
     v
 }
 
-static PLACEHOLDER_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"\{\{jurisdiction\.([A-Za-z0-9_.]+)\}\}").unwrap()
-});
+static PLACEHOLDER_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| crate::re(r"\{\{jurisdiction\.([A-Za-z0-9_.]+)\}\}"));
 
 fn profile_get<'a>(profile: &'a serde_yaml::Value, dotted: &str) -> Option<&'a serde_yaml::Value> {
     let mut cur = profile;

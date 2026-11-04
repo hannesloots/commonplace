@@ -59,7 +59,7 @@ pub fn make_id(title: &str, date: &str) -> String {
 }
 
 static DATE_PREFIX_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\d{4}-\d{2}-\d{2})\s+(.+)$").unwrap());
+    LazyLock::new(|| crate::re(r"^(\d{4}-\d{2}-\d{2})\s+(.+)$"));
 
 pub fn ingest(
     root: &Path,
@@ -517,8 +517,7 @@ pub fn html_to_markdown(html: &str, origin: Option<&str>) -> Result<String> {
     })
 }
 
-static MD_LINK_URL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\]\(<?([^)\s<>]+)>?").unwrap());
+static MD_LINK_URL_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"\]\(<?([^)\s<>]+)>?"));
 
 /// Rewrite relative markdown link and image targets to absolute URLs against
 /// `base`. `keep(href)` returning true leaves that target alone (used to
@@ -545,8 +544,7 @@ pub fn absolutise_links(md: &str, base: &str, keep: impl Fn(&str) -> bool) -> (S
 /// Resolve `href` against `base` (an absolute http(s) URL). Returns None when
 /// the target is already absolute, a fragment, or a non-web scheme.
 pub fn resolve_url(base: &str, href: &str) -> Option<String> {
-    static SCHEME_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+.\-]*:").unwrap());
+    static SCHEME_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"^[A-Za-z][A-Za-z0-9+.\-]*:"));
     if href.is_empty() || href.starts_with('#') || SCHEME_RE.is_match(href) {
         return None;
     }

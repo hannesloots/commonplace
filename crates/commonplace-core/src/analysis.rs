@@ -353,7 +353,7 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
         }
     }
     let mut order: Vec<usize> = (0..net.n).collect();
-    order.sort_by(|a, b| ppr[*b].partial_cmp(&ppr[*a]).unwrap());
+    order.sort_by(|a, b| ppr[*b].total_cmp(&ppr[*a]));
     cands.extend(order.iter().take(30).copied());
     for i in 0..net.n {
         if i != p
@@ -447,12 +447,7 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
             });
         }
     }
-    rows.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap()
-            .then(a.node.cmp(&b.node))
-    });
+    rows.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.node.cmp(&b.node)));
     rows.truncate(limit);
     Some(rows)
 }
@@ -484,12 +479,7 @@ pub fn hubs(g: &Graph, limit: usize) -> Vec<HubRow> {
             betweenness: bc[i].round(),
         })
         .collect();
-    rows.sort_by(|a, b| {
-        b.pagerank
-            .partial_cmp(&a.pagerank)
-            .unwrap()
-            .then(a.node.cmp(&b.node))
-    });
+    rows.sort_by(|a, b| b.pagerank.total_cmp(&a.pagerank).then(a.node.cmp(&b.node)));
     rows.truncate(limit);
     rows
 }
@@ -517,7 +507,7 @@ pub fn communities(g: &Graph, min_size: usize) -> Vec<Community> {
         if members.len() < min_size {
             continue;
         }
-        members.sort_by(|a, b| pr[*b].partial_cmp(&pr[*a]).unwrap());
+        members.sort_by(|a, b| pr[*b].total_cmp(&pr[*a]));
         let mut types: BTreeMap<String, usize> = BTreeMap::new();
         let mut sources: BTreeSet<String> = BTreeSet::new();
         let mut hub = None;
@@ -660,8 +650,7 @@ pub fn gaps(g: &Graph, vault: &Vault) -> Gaps {
     let mut bridges = hubs(g, usize::MAX);
     bridges.sort_by(|a, b| {
         b.betweenness
-            .partial_cmp(&a.betweenness)
-            .unwrap()
+            .total_cmp(&a.betweenness)
             .then(a.node.cmp(&b.node))
     });
     bridges.retain(|b| b.betweenness > 0.0);
@@ -699,7 +688,7 @@ static MASK_RES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"(?m)^#.*$",
     ]
     .iter()
-    .map(|p| Regex::new(p).unwrap())
+    .map(|p| crate::re(p))
     .collect()
 });
 
@@ -972,7 +961,7 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
             });
         }
     }
-    out.sort_by(|x, y| y.score.partial_cmp(&x.score).unwrap().then(x.a.cmp(&y.a)));
+    out.sort_by(|x, y| y.score.total_cmp(&x.score).then(x.a.cmp(&y.a)));
     out.truncate(limit);
     out
 }

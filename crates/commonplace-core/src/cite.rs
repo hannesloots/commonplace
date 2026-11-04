@@ -17,12 +17,13 @@ use std::sync::LazyLock;
 use unicode_normalization::UnicodeNormalization;
 
 static DEF_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^\s*\[\[([^\]\|#]+)(?:\|[^\]]*)?\]\]\s*([^"“”]*?)\s*(?:["“](.*?)["”])?\s*(?:[—\-]+\s*(.*))?$"#).unwrap()
+    crate::re(
+        r#"^\s*\[\[([^\]\|#]+)(?:\|[^\]]*)?\]\]\s*([^"“”]*?)\s*(?:["“](.*?)["”])?\s*(?:[—\-]+\s*(.*))?$"#,
+    )
 });
-static PAGE_MARK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<!--\s*page:\s*(\d+)\s*-->").unwrap());
+static PAGE_MARK_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"<!--\s*page:\s*(\d+)\s*-->"));
 static PARA_MARK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)").unwrap());
+    LazyLock::new(|| crate::re(r"^(?:<!--\s*para:\s*(\d+)\s*-->|\[(\d+)\]\s)"));
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Citation {
@@ -67,16 +68,16 @@ pub fn parse_locator(s: &str) -> Locator {
         return Locator::Whole;
     }
     static L_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?i)^(?:L|lines?\s*)(\d+)(?:\s*[-–]\s*L?(\d+))?$").unwrap());
-    static P_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)^(?:pp?\.?\s*|pages?\s+)(\d+)(?:\s*[-–]\s*(\d+))?$").unwrap()
-    });
+        LazyLock::new(|| crate::re(r"(?i)^(?:L|lines?\s*)(\d+)(?:\s*[-–]\s*L?(\d+))?$"));
+    static P_RE: LazyLock<Regex> =
+        LazyLock::new(|| crate::re(r"(?i)^(?:pp?\.?\s*|pages?\s+)(\d+)(?:\s*[-–]\s*(\d+))?$"));
     static PARA_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)^(?:¶|para(?:graph)?s?\.?\s*|at\s+paras?\s*|\[)\s*(\d+)\]?(?:\s*[-–]\s*\[?(\d+)\]?)?$").unwrap()
+        crate::re(
+            r"(?i)^(?:¶|para(?:graph)?s?\.?\s*|at\s+paras?\s*|\[)\s*(\d+)\]?(?:\s*[-–]\s*\[?(\d+)\]?)?$",
+        )
     });
     static SEC_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)^(?:§|sec(?:tion)?\.?\s*|s\.?\s+)\s*([0-9A-Za-z][0-9A-Za-z.\-()]*)$")
-            .unwrap()
+        crate::re(r"(?i)^(?:§|sec(?:tion)?\.?\s*|s\.?\s+)\s*([0-9A-Za-z][0-9A-Za-z.\-()]*)$")
     });
     if let Some(c) = L_RE.captures(t) {
         let a: usize = c[1].parse().unwrap_or(1);
@@ -154,7 +155,7 @@ pub fn normalise(s: &str) -> String {
     // changes (or was copied into a quote) can never break a match.
     // The link's title text (hover text) is kept too: it is visible content.
     static MD_LINK_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"!?\[([^\]]*)\]\(\s*[^)\s]*(?:\s+"([^"]*)")?\s*\)"#).unwrap()
+        crate::re(r#"!?\[([^\]]*)\]\(\s*[^)\s]*(?:\s+"([^"]*)")?\s*\)"#)
     });
     let s = MD_LINK_RE.replace_all(s, "$1 $2");
     let mut out = String::with_capacity(s.len());

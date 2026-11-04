@@ -21,3 +21,15 @@ pub mod sources;
 pub mod vault;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Compile a regex from a pattern literal written in this crate.
+///
+/// Every caller passes a string literal, so a failure is a bug in the literal
+/// and is caught the first time the pattern is used by the test suite.
+#[expect(
+    clippy::expect_used,
+    reason = "patterns are compile-time literals; an invalid one is a programming error"
+)]
+pub(crate) fn re(pattern: &str) -> regex::Regex {
+    regex::Regex::new(pattern).expect("built-in regex literal is valid")
+}

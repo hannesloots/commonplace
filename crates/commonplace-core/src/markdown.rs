@@ -6,16 +6,15 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 pub static WIKILINK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[\[([^\]\|#\^]+)(?:#([^\]\|]*))?(?:\|([^\]]*))?\]\]").unwrap());
+    LazyLock::new(|| crate::re(r"\[\[([^\]\|#\^]+)(?:#([^\]\|]*))?(?:\|([^\]]*))?\]\]"));
 pub static FOOTNOTE_DEF_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^\[\^([A-Za-z0-9_\-]+)\]:[ \t]*(.*)$").unwrap());
+    LazyLock::new(|| crate::re(r"(?m)^\[\^([A-Za-z0-9_\-]+)\]:[ \t]*(.*)$"));
 pub static FOOTNOTE_REF_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[\^([A-Za-z0-9_\-]+)\]").unwrap());
+    LazyLock::new(|| crate::re(r"\[\^([A-Za-z0-9_\-]+)\]"));
 pub static HEADING_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$").unwrap());
-static FENCE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^[ \t]{0,3}(```|~~~)").unwrap());
-static INLINE_CODE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`[^`\n]*`").unwrap());
+    LazyLock::new(|| crate::re(r"(?m)^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$"));
+static FENCE_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"(?m)^[ \t]{0,3}(```|~~~)"));
+static INLINE_CODE_RE: LazyLock<Regex> = LazyLock::new(|| crate::re(r"`[^`\n]*`"));
 
 /// Replace fenced code blocks and inline code with spaces of equal length, so
 /// byte offsets and line numbers are preserved while links inside code are ignored.
@@ -88,7 +87,7 @@ pub fn wikilinks(text: &str) -> Vec<WikiLink> {
     let masked = mask_comments(&mask_code(text));
     let mut out = vec![];
     for cap in WIKILINK_RE.captures_iter(&masked) {
-        let m = cap.get(0).unwrap();
+        let m = cap.get_match();
         let line = masked[..m.start()].matches('\n').count() + 1;
         let target = cap[1].trim().to_string();
         if target.is_empty() {
@@ -126,7 +125,7 @@ pub fn footnote_defs(text: &str) -> Vec<FootnoteDef> {
     FOOTNOTE_DEF_RE
         .captures_iter(text)
         .map(|c| {
-            let m = c.get(0).unwrap();
+            let m = c.get_match();
             FootnoteDef {
                 label: c[1].to_string(),
                 text: c[2].trim().to_string(),
@@ -143,7 +142,7 @@ pub fn footnote_refs(text: &str) -> Vec<(String, usize)> {
     FOOTNOTE_REF_RE
         .captures_iter(&no_defs)
         .map(|c| {
-            let m = c.get(0).unwrap();
+            let m = c.get_match();
             (
                 c[1].to_string(),
                 no_defs[..m.start()].matches('\n').count() + 1,
@@ -164,7 +163,7 @@ pub fn headings(text: &str) -> Vec<Heading> {
     HEADING_RE
         .captures_iter(&masked)
         .map(|c| {
-            let m = c.get(0).unwrap();
+            let m = c.get_match();
             Heading {
                 level: c[1].len(),
                 text: c[2].trim().to_string(),

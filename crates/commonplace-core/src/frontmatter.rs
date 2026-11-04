@@ -26,10 +26,9 @@ pub fn parse(text: &str) -> Result<Document> {
         });
     }
     // find closing fence on its own line
-    let mut offset = 0usize;
+    // the opening fence was checked above, so the first line is "---\n" or "---\r\n"
     let mut lines = text.split_inclusive('\n');
-    let first = lines.next().unwrap();
-    offset += first.len();
+    let mut offset = lines.next().map_or(0, str::len);
     let mut yaml = String::new();
     let mut closed = false;
     let mut fm_lines = 1usize;

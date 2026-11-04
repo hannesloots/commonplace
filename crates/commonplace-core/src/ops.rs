@@ -11,7 +11,7 @@ use crate::vault::{Page, Vault};
 use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 use serde::Serialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 // ---------- log ----------
@@ -35,10 +35,10 @@ pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
     let p = root.join("log.md");
     let text = std::fs::read_to_string(&p)?;
     let doc = frontmatter::parse(&text)?;
-    let re = Regex::new(r"(?m)^## \[(\d{4})-\d{2}-\d{2}\] ").unwrap();
+    let re = crate::re(r"(?m)^## \[(\d{4})-\d{2}-\d{2}\] ");
     let starts: Vec<(usize, String)> = re
         .captures_iter(&doc.body)
-        .map(|c| (c.get(0).unwrap().start(), c[1].to_string()))
+        .map(|c| (c.get_match().start(), c[1].to_string()))
         .collect();
     if starts.len() <= keep {
         return Ok(0);
@@ -149,8 +149,7 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
     let re = Regex::new(&format!(
         r"(?i)\[\[(?:[^\]\|#]*/)?{}(#[^\]\|]*)?(\|[^\]]*)?\]\]",
         regex::escape(&old_stem)
-    ))
-    .unwrap();
+    ))?;
     let mut files_updated = vec![];
     let mut links = 0;
     for p in &vault.pages {
@@ -184,7 +183,7 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
         serde_yaml::Value::Sequence(aliases.into_iter().map(serde_yaml::Value::String).collect()),
     );
     frontmatter::set_str(&mut doc.fm, "updated", &fsutil::today());
-    let h1 = Regex::new(&format!(r"(?m)^# {}\s*$", regex::escape(&old_stem))).unwrap();
+    let h1 = Regex::new(&format!(r"(?m)^# {}\s*$", regex::escape(&old_stem)))?;
     let body = h1.replace(&doc.body, format!("# {new_title}")).to_string();
     fsutil::write_atomic(&new_path, frontmatter::render(&doc.fm, &body)?.as_bytes())?;
     std::fs::remove_file(&page.path)?;
@@ -263,7 +262,7 @@ pub fn dedupe(vault: &Vault, threshold: f64) -> Vec<DupeCandidate> {
             }
         }
     }
-    out.sort_by(|x, y| y.similarity.partial_cmp(&x.similarity).unwrap());
+    out.sort_by(|x, y| y.similarity.total_cmp(&x.similarity));
     out
 }
 
@@ -367,7 +366,9 @@ pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
     if dest.exists() {
         bail!("{} already exists", dest.display());
     }
-    std::fs::create_dir_all(dest.parent().unwrap())?;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::rename(&src_dir, &dest)?;
     let mut moved = vec![];
     for p in crate::vault::walk_markdown(&dest) {
@@ -427,17 +428,8 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
             continue;
         }
         let (cites, _) = cite::parse_citations(&p.doc.body);
-        let mut body = p.doc.body.clone();
         // renumber footnotes to keep labels unique across pages
-        let mut map: Vec<(String, String)> = vec![];
-        for d in markdown::footnote_defs(&body) {
-            counter += 1;
-            map.push((d.label.clone(), counter.to_string()));
-        }
-        for (oldl, newl) in &map {
-            let re = Regex::new(&format!(r"\[\^{}\]", regex::escape(oldl))).unwrap();
-            body = re.replace_all(&body, format!("[^{newl}]")).to_string();
-        }
+        let mut body = renumber_footnotes(&p.doc.body, &mut counter);
         for c in &cites {
             if let Some(sp) = vault.resolve_page(&c.source) {
                 let sc = sp
@@ -809,6 +801,25 @@ pub fn broken_links(vault: &Vault) -> Vec<LinkIssue> {
     out
 }
 
+/// Give every footnote defined in `body` the next number from `counter`,
+/// rewriting all references and definitions in one pass so that a new label
+/// can never collide with an old one that is still to be rewritten.
+fn renumber_footnotes(body: &str, counter: &mut usize) -> String {
+    let map: HashMap<String, String> = markdown::footnote_defs(body)
+        .into_iter()
+        .map(|d| {
+            *counter += 1;
+            (d.label, counter.to_string())
+        })
+        .collect();
+    markdown::FOOTNOTE_REF_RE
+        .replace_all(body, |c: &regex::Captures<'_>| match map.get(&c[1]) {
+            Some(new) => format!("[^{new}]"),
+            None => c[0].to_string(),
+        })
+        .into_owned()
+}
+
 pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
     let page = vault
         .resolve_page(target)
@@ -825,4 +836,26 @@ pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
         .unwrap_or_default();
     v.sort();
     Ok(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::renumber_footnotes;
+
+    #[test]
+    fn renumbering_out_of_order_labels_keeps_references_distinct() {
+        let body = "A[^2] then B[^1].\n\n[^2]: second\n[^1]: first\n";
+        let mut counter = 0;
+        let out = renumber_footnotes(body, &mut counter);
+        assert_eq!(out, "A[^1] then B[^2].\n\n[^1]: second\n[^2]: first\n");
+        assert_eq!(counter, 2);
+    }
+
+    #[test]
+    fn renumbering_continues_from_counter_and_leaves_undefined_refs() {
+        let body = "x[^a] y[^missing]\n\n[^a]: note\n";
+        let mut counter = 4;
+        let out = renumber_footnotes(body, &mut counter);
+        assert_eq!(out, "x[^5] y[^missing]\n\n[^5]: note\n");
+    }
 }

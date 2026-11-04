@@ -12,9 +12,8 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
 
-static INLINE_FIELD_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^\s*(?:[-*]\s*)?([A-Za-z][A-Za-z0-9_\-]*)::\s*(.+)$").unwrap()
-});
+static INLINE_FIELD_RE: LazyLock<Regex> =
+    LazyLock::new(|| crate::re(r"(?m)^\s*(?:[-*]\s*)?([A-Za-z][A-Za-z0-9_\-]*)::\s*(.+)$"));
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Node {

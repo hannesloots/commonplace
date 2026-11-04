@@ -158,7 +158,7 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
             })
         })
         .collect();
-    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    hits.sort_by(|a, b| b.score.total_cmp(&a.score));
     hits.truncate(opts.limit);
     hits
 }

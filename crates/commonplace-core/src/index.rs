@@ -28,10 +28,10 @@ fn line_for(p: &Page) -> String {
     {
         extra.push(s);
     }
-    if p.get("confidence").as_deref() == Some("contested")
-        || p.get("confidence").as_deref() == Some("low")
+    if let Some(c) = p.get("confidence")
+        && (c == "contested" || c == "low")
     {
-        extra.push(format!("confidence {}", p.get("confidence").unwrap()));
+        extra.push(format!("confidence {c}"));
     }
     let tail = if extra.is_empty() {
         String::new()

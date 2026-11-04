@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- Errors have stable codes. A failed command (exit 2) prints
+  `error[<code>]: <message>` and a `hint:` line on stderr; with `--json` it
+  prints `{"error": {"code", "message", "hint", "suggestions", "path"}}` on
+  stdout, so an agent can branch on the code. A missing page suggests the
+  closest titles. Command-line usage errors with `--json` use code `usage`.
+  The codes are listed in `references/cli.md`.
+- `--root` at a folder without `commonplace.toml` now fails with `no_root`
+  instead of an I/O error.
+- `export` renumbered footnotes one label at a time, so a page that defined
+  `[^2]` before `[^1]` ended up with both references as `[^2]`. Footnotes
+  are now renumbered in one pass.
+- `doctor` printed the enabled packs as `Array [String("ea"), ...]`; it now
+  prints `["ea", "legal"]`, like `status`.
+- `cite find` no longer crashes on a line locator of 0.
+- `lint --changed` now includes files ending in upper-case `.MD`, as the
+  rest of the tool does.
+- Internal: Rust edition 2024; the workspace denies clippy pedantic and
+  `unwrap`/`expect`/`panic` lints; long functions split; CI checks
+  formatting, clippy, tests, docs, licences and advisories (cargo-deny) and
+  the minimum Rust version (1.88).
+
 ## 0.5.2 — 2026-11-03
 
 - First release from the published history: author and copyright are

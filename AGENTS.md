@@ -17,9 +17,12 @@ Done = all four pass, no new `#[allow]`, every `#[expect]` has a `reason`.
 
 ## Rules
 - Edition 2024, MSRV = `rust-version` in Cargo.toml (CI checks it). Add deps with `cargo add`.
-- Errors: `anyhow::Result` with `.context()` throughout (the core crate is internal and only
-  consumed by the CLI). No `unwrap`/`expect`/`panic!` outside tests; build regexes from literals
-  with `crate::re`. Sort floats with `total_cmp`.
+- Errors: core returns `commonplace_core::Error` (anyhow is not a core dependency). Agents
+  branch on its stable codes, so a new failure mode gets a kind with a code and a hint in
+  `error.rs` plus a row in `skills/commonplace/references/cli.md` (a test enforces this).
+  CLI commands raise core `Error` constructors; `bail!`/`anyhow!` are banned there by clippy.
+- No `unwrap`/`expect`/`panic!` outside tests; build regexes from literals with `crate::re`.
+  Sort floats with `total_cmp`.
 - Ownership: borrow by default. Every new `clone()`, `Arc`, `Box<dyn>` needs a reason.
 - No `unsafe` (forbidden in Cargo.toml).
 - Structure: logic lives in core; CLI command functions parse, call core, print. Items are

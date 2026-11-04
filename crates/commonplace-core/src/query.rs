@@ -24,9 +24,9 @@ enum Tok {
     RParen,
 }
 
-fn lex(s: &str) -> Result<Vec<Tok>> {
+fn lex(input: &str) -> Result<Vec<Tok>> {
     let mut out = vec![];
-    let cs: Vec<char> = s.chars().collect();
+    let cs: Vec<char> = input.chars().collect();
     let mut i = 0;
     while i < cs.len() {
         let c = cs[i];
@@ -45,17 +45,17 @@ fn lex(s: &str) -> Result<Vec<Tok>> {
             continue;
         }
         if c == '"' || c == '\'' {
-            let q = c;
+            let quote = c;
             let mut j = i + 1;
-            let mut v = String::new();
-            while j < cs.len() && cs[j] != q {
-                v.push(cs[j]);
+            let mut value = String::new();
+            while j < cs.len() && cs[j] != quote {
+                value.push(cs[j]);
                 j += 1;
             }
             if j >= cs.len() {
                 return Err(anyhow!("unterminated string in query"));
             }
-            out.push(Tok::Str(v));
+            out.push(Tok::Str(value));
             i = j + 1;
             continue;
         }
@@ -73,18 +73,18 @@ fn lex(s: &str) -> Result<Vec<Tok>> {
             continue;
         }
         let mut j = i;
-        let mut w = String::new();
+        let mut word = String::new();
         while j < cs.len() && !cs[j].is_whitespace() && !"()=!<>~\"'".contains(cs[j]) {
-            w.push(cs[j]);
+            word.push(cs[j]);
             j += 1;
         }
         i = j;
-        match w.to_ascii_lowercase().as_str() {
+        match word.to_ascii_lowercase().as_str() {
             "and" => out.push(Tok::And),
             "or" => out.push(Tok::Or),
             "not" => out.push(Tok::Not),
-            "has" | "exists" => out.push(Tok::Op(w.to_ascii_lowercase())),
-            _ => out.push(Tok::Ident(w)),
+            "has" | "exists" => out.push(Tok::Op(word.to_ascii_lowercase())),
+            _ => out.push(Tok::Ident(word)),
         }
     }
     Ok(out)
@@ -149,9 +149,8 @@ impl Parser {
                 }
             }
             Some(Tok::Ident(field)) => {
-                let op = match self.next() {
-                    Some(Tok::Op(o)) => o,
-                    _ => return Err(anyhow!("expected operator after '{field}'")),
+                let Some(Tok::Op(op)) = self.next() else {
+                    return Err(anyhow!("expected operator after '{field}'"));
                 };
                 if op == "exists" {
                     return Ok(Expr::Cmp {
@@ -210,12 +209,12 @@ fn scalar(v: &Value) -> String {
 }
 
 fn cmp_values(a: &str, op: &str, b: &str) -> bool {
+    use std::cmp::Ordering::{Equal, Greater, Less};
     let (na, nb) = (a.trim().parse::<f64>(), b.trim().parse::<f64>());
     let ord = match (na, nb) {
         (Ok(x), Ok(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
         _ => a.to_lowercase().cmp(&b.to_lowercase()),
     };
-    use std::cmp::Ordering::{Equal, Greater, Less};
     match op {
         "=" => ord == Equal,
         "!=" => ord != Equal,

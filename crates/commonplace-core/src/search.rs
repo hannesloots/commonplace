@@ -2,7 +2,7 @@
 //! optionally, source text layers. Built per run: a few hundred pages take
 //! milliseconds, and nothing on disk can go stale.
 
-use crate::vault::Vault;
+use crate::vault::{Page, Vault};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -43,100 +43,125 @@ struct Doc {
     text: String,
 }
 
-pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
-    let mut docs: Vec<Doc> = vec![];
-    for p in &vault.pages {
-        if !opts.include_archive && p.is_archived() {
-            continue;
-        }
-        if let Some(s) = &opts.scope
-            && !p.rel.starts_with(s.trim_end_matches('/'))
-        {
-            continue;
-        }
-        if let Some(t) = &opts.ptype
-            && &p.ptype != t
-        {
-            continue;
-        }
-        let mut tf: HashMap<String, f64> = HashMap::new();
-        for w in tokenize(&p.title) {
-            *tf.entry(w).or_default() += 3.0;
-        }
-        for a in &p.aliases {
-            for w in tokenize(a) {
-                *tf.entry(w).or_default() += 2.0;
-            }
-        }
-        for t in &p.tags {
-            for w in tokenize(t) {
-                *tf.entry(w).or_default() += 2.0;
-            }
-        }
-        if let Some(d) = p.get("description") {
-            for w in tokenize(&d) {
-                *tf.entry(w).or_default() += 2.0;
-            }
-        }
-        let body_tokens = tokenize(&p.doc.body);
-        for w in &body_tokens {
-            *tf.entry(w.clone()).or_default() += 1.0;
-        }
+impl Doc {
+    fn new(
+        rel: String,
+        title: String,
+        ptype: String,
+        tf: HashMap<String, f64>,
+        text: String,
+    ) -> Self {
         let len = tf.values().sum::<f64>().max(1.0);
-        docs.push(Doc {
-            rel: p.rel.clone(),
-            title: p.title.clone(),
-            ptype: p.ptype.clone(),
+        Doc {
+            rel,
+            title,
+            ptype,
             tf,
             len,
-            text: p.doc.body.clone(),
-        });
-    }
-    if opts.include_text_layer {
-        let dir = vault.root.join("sources").join("text");
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            for e in rd.flatten() {
-                let path = e.path();
-                if !crate::fsutil::is_markdown(&path) {
-                    continue;
-                }
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    let mut tf: HashMap<String, f64> = HashMap::new();
-                    for w in tokenize(&text) {
-                        *tf.entry(w).or_default() += 1.0;
-                    }
-                    let len = tf.values().sum::<f64>().max(1.0);
-                    docs.push(Doc {
-                        rel: crate::fsutil::rel(&vault.root, &path),
-                        title: crate::fsutil::stem(&path),
-                        ptype: "source-text".into(),
-                        tf,
-                        len,
-                        text,
-                    });
-                }
-            }
+            text,
         }
     }
-    let n = docs.len() as f64;
+}
+
+fn add_terms(tf: &mut HashMap<String, f64>, text: &str, weight: f64) {
+    for w in tokenize(text) {
+        *tf.entry(w).or_default() += weight;
+    }
+}
+
+/// Whether a page passes the archive, scope and type filters.
+fn page_in_scope(p: &Page, opts: &SearchOptions) -> bool {
+    (opts.include_archive || !p.is_archived())
+        && opts
+            .scope
+            .as_ref()
+            .is_none_or(|s| p.rel.starts_with(s.trim_end_matches('/')))
+        && opts.ptype.as_ref().is_none_or(|t| &p.ptype == t)
+}
+
+/// A page as a search document: title weighs 3, aliases, tags and description 2, body 1.
+fn page_doc(p: &Page) -> Doc {
+    let mut tf: HashMap<String, f64> = HashMap::new();
+    add_terms(&mut tf, &p.title, 3.0);
+    for a in &p.aliases {
+        add_terms(&mut tf, a, 2.0);
+    }
+    for t in &p.tags {
+        add_terms(&mut tf, t, 2.0);
+    }
+    if let Some(d) = p.get("description") {
+        add_terms(&mut tf, &d, 2.0);
+    }
+    add_terms(&mut tf, &p.doc.body, 1.0);
+    Doc::new(
+        p.rel.clone(),
+        p.title.clone(),
+        p.ptype.clone(),
+        tf,
+        p.doc.body.clone(),
+    )
+}
+
+/// Every source text layer in `sources/text` as a search document.
+fn text_layer_docs(vault: &Vault) -> Vec<Doc> {
+    let Ok(rd) = std::fs::read_dir(vault.root.join("sources").join("text")) else {
+        return vec![];
+    };
+    let mut docs = vec![];
+    for path in rd.flatten().map(|e| e.path()) {
+        if !crate::fsutil::is_markdown(&path) {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            let mut tf: HashMap<String, f64> = HashMap::new();
+            add_terms(&mut tf, &text, 1.0);
+            docs.push(Doc::new(
+                crate::fsutil::rel(&vault.root, &path),
+                crate::fsutil::stem(&path),
+                "source-text".into(),
+                tf,
+                text,
+            ));
+        }
+    }
+    docs
+}
+
+pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
+    let mut docs: Vec<Doc> = vault
+        .pages
+        .iter()
+        .filter(|p| page_in_scope(p, opts))
+        .map(page_doc)
+        .collect();
+    if opts.include_text_layer {
+        docs.extend(text_layer_docs(vault));
+    }
+    let mut hits = bm25(&docs, &tokenize(query));
+    hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+    hits.truncate(opts.limit);
+    hits
+}
+
+/// Okapi BM25 (k1 = 1.2, b = 0.75); documents without a matching term are dropped.
+fn bm25(docs: &[Doc], qtokens: &[String]) -> Vec<Hit> {
+    let n = crate::count_f64(docs.len());
     if n == 0.0 {
         return vec![];
     }
     let avg_len = docs.iter().map(|d| d.len).sum::<f64>() / n;
-    let qtokens = tokenize(query);
     let mut df: HashMap<&str, f64> = HashMap::new();
-    for q in &qtokens {
+    for q in qtokens {
         df.insert(
             q,
-            docs.iter().filter(|d| d.tf.contains_key(q)).count() as f64,
+            crate::count_f64(docs.iter().filter(|d| d.tf.contains_key(q)).count()),
         );
     }
     let (k1, b) = (1.2, 0.75);
-    let mut hits: Vec<Hit> = docs
-        .iter()
+    docs.iter()
         .filter_map(|d| {
             let mut score = 0.0;
-            for q in &qtokens {
+            for q in qtokens {
                 let f = *d.tf.get(q).unwrap_or(&0.0);
                 if f == 0.0 {
                     continue;
@@ -147,7 +172,7 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
             if score <= 0.0 {
                 return None;
             }
-            let (snippet, line) = snippet(&d.text, &qtokens);
+            let (snippet, line) = snippet(&d.text, qtokens);
             Some(Hit {
                 rel: d.rel.clone(),
                 title: d.title.clone(),
@@ -157,10 +182,7 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
                 line,
             })
         })
-        .collect();
-    hits.sort_by(|a, b| b.score.total_cmp(&a.score));
-    hits.truncate(opts.limit);
-    hits
+        .collect()
 }
 
 fn snippet(text: &str, q: &[String]) -> (String, Option<usize>) {

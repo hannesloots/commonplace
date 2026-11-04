@@ -140,7 +140,7 @@ pub const DIRS: &[&str] = &[
 pub fn known_packs() -> Vec<String> {
     let mut v: Vec<String> = PACK_FILES
         .iter()
-        .map(|(p, _)| p.split('/').next().unwrap().to_string())
+        .map(|(p, _)| p.split_once('/').map_or(*p, |(pack, _)| pack).to_string())
         .collect();
     v.dedup();
     v
@@ -353,6 +353,59 @@ pub fn default_folder(ptype: &str, title: &str) -> Option<String> {
     })
 }
 
+/// The template for `ptype`: the commonplace's own templates first, then each
+/// enabled pack's. Also returns the pack type's `folder_hint`, if any.
+fn find_template(root: &Path, cfg: &Config, ptype: &str) -> Result<(PathBuf, Option<String>)> {
+    let tool = crate::vault::tool_dir(root);
+    let own = tool.join("templates").join(format!("{ptype}.md"));
+    if own.exists() {
+        return Ok((own, None));
+    }
+    for p in &cfg.packs {
+        let cand = tool
+            .join("packs")
+            .join(p)
+            .join("templates")
+            .join(format!("{ptype}.md"));
+        if cand.exists() {
+            let packs = crate::pack::load_packs(
+                &tool.join("packs"),
+                std::slice::from_ref(p),
+                &cfg.jurisdiction,
+            )?;
+            let hint = packs
+                .first()
+                .and_then(|pk| pk.types.get(ptype))
+                .map(|t| t.folder_hint.clone())
+                .filter(|h| !h.is_empty());
+            return Ok((cand, hint));
+        }
+    }
+    bail!(
+        "no template for type '{ptype}' (core types: {}; pack types come from enabled packs)",
+        PAGE_TEMPLATES
+            .iter()
+            .map(|(n, _)| n.trim_end_matches(".md"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+}
+
+/// A `--set key=value` value: `[a, "b"]` becomes a list of strings, anything else a string.
+fn extra_field_value(v: &str) -> serde_yaml::Value {
+    match v.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        Some(inner) => serde_yaml::Value::Sequence(
+            inner
+                .split(',')
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .filter(|s| !s.is_empty())
+                .map(serde_yaml::Value::String)
+                .collect(),
+        ),
+        None => serde_yaml::Value::String(v.to_string()),
+    }
+}
+
 pub fn new_page(
     root: &Path,
     cfg: &Config,
@@ -369,44 +422,7 @@ pub fn new_page(
     if title.is_empty() {
         bail!("a title is required");
     }
-    // find template: commonplace templates, then pack templates
-    let mut tpl_path = crate::vault::tool_dir(root)
-        .join("templates")
-        .join(format!("{ptype}.md"));
-    let mut pack_hint: Option<String> = None;
-    if !tpl_path.exists() {
-        for p in &cfg.packs {
-            let cand = crate::vault::tool_dir(root)
-                .join("packs")
-                .join(p)
-                .join("templates")
-                .join(format!("{ptype}.md"));
-            if cand.exists() {
-                tpl_path = cand;
-                let packs = crate::pack::load_packs(
-                    &crate::vault::tool_dir(root).join("packs"),
-                    std::slice::from_ref(p),
-                    &cfg.jurisdiction,
-                )?;
-                pack_hint = packs
-                    .first()
-                    .and_then(|pk| pk.types.get(ptype))
-                    .map(|t| t.folder_hint.clone())
-                    .filter(|h| !h.is_empty());
-                break;
-            }
-        }
-    }
-    if !tpl_path.exists() {
-        bail!(
-            "no template for type '{ptype}' (core types: {}; pack types come from enabled packs)",
-            PAGE_TEMPLATES
-                .iter()
-                .map(|(n, _)| n.trim_end_matches(".md"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-    }
+    let (tpl_path, pack_hint) = find_template(root, cfg, ptype)?;
     let folder = match folder {
         Some(f) => f.trim_matches('/').to_string(),
         None => match default_folder(ptype, &title).or(pack_hint) {
@@ -434,17 +450,7 @@ pub fn new_page(
     let text = fill(&raw, &cfg.name, &cfg.purpose, &title);
     let mut doc = frontmatter::parse(&text)?;
     for (k, v) in extra {
-        if v.starts_with('[') && v.ends_with(']') {
-            let items: Vec<serde_yaml::Value> = v[1..v.len() - 1]
-                .split(',')
-                .map(|s| s.trim().trim_matches('"').to_string())
-                .filter(|s| !s.is_empty())
-                .map(serde_yaml::Value::String)
-                .collect();
-            frontmatter::set_value(&mut doc.fm, k, serde_yaml::Value::Sequence(items));
-        } else {
-            frontmatter::set_str(&mut doc.fm, k, v);
-        }
+        frontmatter::set_value(&mut doc.fm, k, extra_field_value(v));
     }
     frontmatter::set_str(&mut doc.fm, "created", &fsutil::today());
     frontmatter::set_str(&mut doc.fm, "updated", &fsutil::today());
@@ -506,6 +512,20 @@ pub fn persona_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bracketed_extra_field_becomes_a_list() {
+        let v = extra_field_value(r#"[ a, "b c" , ]"#);
+        let items: Vec<&str> = v
+            .as_sequence()
+            .expect("a list")
+            .iter()
+            .filter_map(serde_yaml::Value::as_str)
+            .collect();
+        assert_eq!(items, ["a", "b c"]);
+        assert_eq!(extra_field_value("[").as_str(), Some("["));
+        assert_eq!(extra_field_value("plain").as_str(), Some("plain"));
+    }
 
     #[test]
     fn embedded_packs_parse() {

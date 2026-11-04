@@ -139,7 +139,7 @@ pub fn load_packs(packs_dir: &Path, names: &[String], jurisdiction: &str) -> Res
         let mut pack: Pack =
             serde_yaml::from_value(value).with_context(|| format!("parsing {}", p.display()))?;
         if pack.name.is_empty() {
-            pack.name = n.clone();
+            pack.name.clone_from(&n);
         }
         pack.jurisdiction = profile;
         out.push(pack);
@@ -193,7 +193,7 @@ fn substitute(v: &mut serde_yaml::Value, profile: &serde_yaml::Value) {
         serde_yaml::Value::String(s) => {
             if s.contains("{{jurisdiction.") {
                 *s = PLACEHOLDER_RE
-                    .replace_all(s, |c: &regex::Captures| {
+                    .replace_all(s, |c: &regex::Captures<'_>| {
                         profile_get(profile, &c[1]).map_or_else(|| c[0].to_string(), scalar_text)
                     })
                     .into_owned();

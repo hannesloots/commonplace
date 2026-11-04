@@ -6,10 +6,11 @@
 
 use crate::cite;
 use crate::markdown;
-use crate::vault::{Resolution, Vault};
+use crate::vault::{Page, Resolution, Vault};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 static INLINE_FIELD_RE: LazyLock<Regex> =
@@ -48,41 +49,43 @@ pub struct Graph {
 /// Frontmatter fields that are structural, not relations.
 const NON_RELATION_FIELDS: &[&str] = &["aliases", "tags"];
 
-pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
-    let mut g = Graph::default();
-    for p in &vault.pages {
-        if p.parse_error.is_some()
-            || p.rel == "index.md"
-            || p.rel.starts_with("indexes/")
-            || [
-                "index",
-                "log",
-                "registry",
-                "questions",
-                "error-book",
-                "review",
-            ]
-            .contains(&p.ptype.as_str())
-        {
-            continue;
-        }
-        g.index.insert(p.stem.to_lowercase(), g.nodes.len());
-        g.nodes.push(Node {
-            id: p.stem.clone(),
-            rel: p.rel.clone(),
-            label: if p.ptype.is_empty() {
-                "page".into()
-            } else {
-                p.ptype.clone()
-            },
-            title: p.title.clone(),
-            description: p.get("description").unwrap_or_default(),
-            status: p.get("status").unwrap_or_default(),
-            folder: p.folder(),
-        });
+/// Page types that are navigation or bookkeeping, not graph nodes.
+const NON_NODE_TYPES: [&str; 6] = [
+    "index",
+    "log",
+    "registry",
+    "questions",
+    "error-book",
+    "review",
+];
+
+/// The node for a page, or `None` for unparseable and navigation pages.
+fn graph_node(p: &Page) -> Option<Node> {
+    if p.parse_error.is_some()
+        || p.rel == "index.md"
+        || p.rel.starts_with("indexes/")
+        || NON_NODE_TYPES.contains(&p.ptype.as_str())
+    {
+        return None;
     }
-    let mut seen: HashSet<Edge> = HashSet::new();
-    let mut add = |g: &mut Graph, from: &str, to: &str, rel: &str| {
+    Some(Node {
+        id: p.stem.clone(),
+        rel: p.rel.clone(),
+        label: if p.ptype.is_empty() {
+            "page".into()
+        } else {
+            p.ptype.clone()
+        },
+        title: p.title.clone(),
+        description: p.get("description").unwrap_or_default(),
+        status: p.get("status").unwrap_or_default(),
+        folder: p.folder(),
+    })
+}
+
+impl Graph {
+    /// Add an edge unless it is a self loop or already present.
+    fn add_edge(&mut self, seen: &mut HashSet<Edge>, from: &str, to: &str, rel: &str) {
         let e = Edge {
             from: from.to_string(),
             to: to.to_string(),
@@ -91,59 +94,73 @@ pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
         if from.eq_ignore_ascii_case(to) || !seen.insert(e.clone()) {
             return;
         }
-        let i = g.edges.len();
-        g.edges.push(e);
-        g.out.entry(from.to_lowercase()).or_default().push(i);
-        g.inn.entry(to.to_lowercase()).or_default().push(i);
-    };
-    let resolve = |t: &str| -> Option<String> {
-        match vault.resolve(t) {
-            Resolution::Found(i) => Some(vault.pages[i].stem.clone()),
-            _ => None,
+        let i = self.edges.len();
+        self.edges.push(e);
+        self.out.entry(from.to_lowercase()).or_default().push(i);
+        self.inn.entry(to.to_lowercase()).or_default().push(i);
+    }
+}
+
+/// The stem of the one page `target` resolves to.
+fn resolve_stem(vault: &Vault, target: &str) -> Option<String> {
+    match vault.resolve(target) {
+        Resolution::Found(i) => Some(vault.pages[i].stem.clone()),
+        _ => None,
+    }
+}
+
+/// A page's outgoing edges, in order: frontmatter link fields (`sources` becomes
+/// `cites`), inline `field:: [[x]]` fields, citations, then plain wikilinks as
+/// `mentions` when asked for. Unresolvable targets are skipped.
+fn page_edges(vault: &Vault, p: &Page, include_mentions: bool) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = vec![];
+    for (field, target) in &p.fm_links {
+        if NON_RELATION_FIELDS.contains(&field.as_str()) {
+            continue;
         }
-    };
+        if let Some(t) = resolve_stem(vault, target) {
+            let rel = if field == "sources" { "cites" } else { field };
+            out.push((t, rel.to_string()));
+        }
+    }
+    let masked = markdown::mask_comments(&markdown::mask_code(&p.doc.body));
+    for c in INLINE_FIELD_RE.captures_iter(&masked) {
+        let field = c[1].to_lowercase();
+        for target in markdown::wikilink_targets_in(&c[2]) {
+            if let Some(t) = resolve_stem(vault, &target) {
+                out.push((t, field.clone()));
+            }
+        }
+    }
+    let (cites, _) = cite::parse_citations(&p.doc.body);
+    for c in &cites {
+        if let Some(t) = resolve_stem(vault, &c.source) {
+            out.push((t, "cites".into()));
+        }
+    }
+    if include_mentions {
+        for l in &p.body_links {
+            if let Some(t) = resolve_stem(vault, &l.target) {
+                out.push((t, "mentions".into()));
+            }
+        }
+    }
+    out
+}
+
+pub fn build(vault: &Vault, include_mentions: bool) -> Graph {
+    let mut g = Graph::default();
+    for node in vault.pages.iter().filter_map(graph_node) {
+        g.index.insert(node.id.to_lowercase(), g.nodes.len());
+        g.nodes.push(node);
+    }
+    let mut seen: HashSet<Edge> = HashSet::new();
     for p in &vault.pages {
         if !g.index.contains_key(&p.stem.to_lowercase()) {
             continue;
         }
-        // typed: frontmatter link fields
-        for (field, target) in &p.fm_links {
-            if NON_RELATION_FIELDS.contains(&field.as_str()) {
-                continue;
-            }
-            if let Some(t) = resolve(target) {
-                let rel = if field == "sources" {
-                    "cites"
-                } else {
-                    field.as_str()
-                };
-                add(&mut g, &p.stem, &t, rel);
-            }
-        }
-        // typed: inline fields in body
-        let masked = markdown::mask_comments(&markdown::mask_code(&p.doc.body));
-        for c in INLINE_FIELD_RE.captures_iter(&masked) {
-            let field = c[1].to_lowercase();
-            for target in markdown::wikilink_targets_in(&c[2]) {
-                if let Some(t) = resolve(&target) {
-                    add(&mut g, &p.stem, &t, &field);
-                }
-            }
-        }
-        // citations
-        let (cites, _) = cite::parse_citations(&p.doc.body);
-        for c in &cites {
-            if let Some(t) = resolve(&c.source) {
-                add(&mut g, &p.stem, &t, "cites");
-            }
-        }
-        // mentions
-        if include_mentions {
-            for l in &p.body_links {
-                if let Some(t) = resolve(&l.target) {
-                    add(&mut g, &p.stem, &t, "mentions");
-                }
-            }
+        for (to, rel) in page_edges(vault, p, include_mentions) {
+            g.add_edge(&mut seen, &p.stem, &to, &rel);
         }
     }
     g
@@ -230,17 +247,17 @@ impl Graph {
         direction: &str,
         limit: usize,
     ) -> Vec<Vec<String>> {
-        let (Some(a), Some(b)) = (self.node(from), self.node(to)) else {
+        let (Some(start), Some(goal)) = (self.node(from), self.node(to)) else {
             return vec![];
         };
-        let target = b.id.to_lowercase();
+        let target = goal.id.to_lowercase();
         let mut results: Vec<Vec<String>> = vec![];
-        let mut q: VecDeque<(String, Vec<String>, HashSet<String>)> = VecDeque::new();
+        let mut queue: VecDeque<(String, Vec<String>, HashSet<String>)> = VecDeque::new();
         let mut start_seen = HashSet::new();
-        start_seen.insert(a.id.to_lowercase());
-        q.push_back((a.id.clone(), vec![a.id.clone()], start_seen));
+        start_seen.insert(start.id.to_lowercase());
+        queue.push_back((start.id.clone(), vec![start.id.clone()], start_seen));
         let mut best_len: Option<usize> = None;
-        while let Some((id, path, visited)) = q.pop_front() {
+        while let Some((id, path, visited)) = queue.pop_front() {
             if let Some(bl) = best_len
                 && path.len() > bl
             {
@@ -271,7 +288,7 @@ impl Graph {
                 }
                 let mut v = visited.clone();
                 v.insert(other.to_lowercase());
-                q.push_back((other, p, v));
+                queue.push_back((other, p, v));
             }
         }
         results
@@ -324,7 +341,7 @@ impl Graph {
                 )
             })
             .collect();
-        deg.sort_by(|a, b| (b.1 + b.2).cmp(&(a.1 + a.2)));
+        deg.sort_by_key(|d| std::cmp::Reverse(d.1 + d.2));
         let hubs: Vec<(String, usize)> = deg
             .iter()
             .take(10)
@@ -391,15 +408,25 @@ impl Graph {
             "// Generated by `commonplace graph export --format cypher`. Load with cypher-shell or Neo4j Browser.\nCREATE CONSTRAINT commonplace_page_id IF NOT EXISTS FOR (p:Page) REQUIRE p.id IS UNIQUE;\n",
         );
         for n in &self.nodes {
-            s.push_str(&format!("MERGE (n:Page {{id: '{}'}}) SET n:{}, n.title = '{}', n.path = '{}', n.description = '{}', n.status = '{}';\n", esc(&n.id), label(&n.label), esc(&n.title), esc(&n.rel), esc(&n.description), esc(&n.status)));
+            let _ = writeln!(
+                s,
+                "MERGE (n:Page {{id: '{}'}}) SET n:{}, n.title = '{}', n.path = '{}', n.description = '{}', n.status = '{}';",
+                esc(&n.id),
+                label(&n.label),
+                esc(&n.title),
+                esc(&n.rel),
+                esc(&n.description),
+                esc(&n.status)
+            );
         }
         for e in &self.edges {
-            s.push_str(&format!(
-                "MATCH (a:Page {{id: '{}'}}), (b:Page {{id: '{}'}}) MERGE (a)-[:{}]->(b);\n",
+            let _ = writeln!(
+                s,
+                "MATCH (a:Page {{id: '{}'}}), (b:Page {{id: '{}'}}) MERGE (a)-[:{}]->(b);",
                 esc(&e.from),
                 esc(&e.to),
                 label(&e.rel).to_uppercase()
-            ));
+            );
         }
         s
     }
@@ -415,10 +442,23 @@ impl Graph {
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\">\n<key id=\"label\" for=\"node\" attr.name=\"label\" attr.type=\"string\"/>\n<key id=\"title\" for=\"node\" attr.name=\"title\" attr.type=\"string\"/>\n<key id=\"path\" for=\"node\" attr.name=\"path\" attr.type=\"string\"/>\n<key id=\"rel\" for=\"edge\" attr.name=\"rel\" attr.type=\"string\"/>\n<graph id=\"commonplace\" edgedefault=\"directed\">\n",
         );
         for n in &self.nodes {
-            s.push_str(&format!("<node id=\"{}\"><data key=\"label\">{}</data><data key=\"title\">{}</data><data key=\"path\">{}</data></node>\n", esc(&n.id), esc(&n.label), esc(&n.title), esc(&n.rel)));
+            let _ = writeln!(
+                s,
+                "<node id=\"{}\"><data key=\"label\">{}</data><data key=\"title\">{}</data><data key=\"path\">{}</data></node>",
+                esc(&n.id),
+                esc(&n.label),
+                esc(&n.title),
+                esc(&n.rel)
+            );
         }
         for (i, e) in self.edges.iter().enumerate() {
-            s.push_str(&format!("<edge id=\"e{i}\" source=\"{}\" target=\"{}\"><data key=\"rel\">{}</data></edge>\n", esc(&e.from), esc(&e.to), esc(&e.rel)));
+            let _ = writeln!(
+                s,
+                "<edge id=\"e{i}\" source=\"{}\" target=\"{}\"><data key=\"rel\">{}</data></edge>",
+                esc(&e.from),
+                esc(&e.to),
+                esc(&e.rel)
+            );
         }
         s.push_str("</graph>\n</graphml>\n");
         s
@@ -431,24 +471,20 @@ impl Graph {
         };
         for n in &self.nodes {
             if ids.is_none_or(|set| set.contains(&n.id.to_lowercase())) {
-                s.push_str(&format!(
-                    "  {}[\"{}<br/><i>{}</i>\"]\n",
+                let _ = writeln!(
+                    s,
+                    "  {}[\"{}<br/><i>{}</i>\"]",
                     key(&n.id),
                     n.id.replace('"', "'"),
                     n.label
-                ));
+                );
             }
         }
         for e in &self.edges {
             if ids.is_none_or(|set| {
                 set.contains(&e.from.to_lowercase()) && set.contains(&e.to.to_lowercase())
             }) {
-                s.push_str(&format!(
-                    "  {} -->|{}| {}\n",
-                    key(&e.from),
-                    e.rel,
-                    key(&e.to)
-                ));
+                let _ = writeln!(s, "  {} -->|{}| {}", key(&e.from), e.rel, key(&e.to));
             }
         }
         s
@@ -459,20 +495,22 @@ impl Graph {
         let mut s =
             String::from("digraph commonplace {\n  rankdir=LR; node [shape=box, fontsize=10];\n");
         for n in &self.nodes {
-            s.push_str(&format!(
-                "  \"{}\" [label=\"{}\\n({})\"];\n",
+            let _ = writeln!(
+                s,
+                "  \"{}\" [label=\"{}\\n({})\"];",
                 esc(&n.id),
                 esc(&n.id),
                 n.label
-            ));
+            );
         }
         for e in &self.edges {
-            s.push_str(&format!(
-                "  \"{}\" -> \"{}\" [label=\"{}\"];\n",
+            let _ = writeln!(
+                s,
+                "  \"{}\" -> \"{}\" [label=\"{}\"];",
                 esc(&e.from),
                 esc(&e.to),
                 e.rel
-            ));
+            );
         }
         s.push_str("}\n");
         s

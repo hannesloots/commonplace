@@ -12,6 +12,7 @@ use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::path::Path;
 
 // ---------- log ----------
@@ -23,9 +24,9 @@ pub fn log_append(root: &Path, op: &str, title: &str, bullets: &[String]) -> Res
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(&format!("\n## [{}] {} | {}\n", fsutil::today(), op, title));
+    let _ = write!(text, "\n## [{}] {} | {}\n", fsutil::today(), op, title);
     for b in bullets {
-        text.push_str(&format!("- {b}\n"));
+        let _ = writeln!(text, "- {b}");
     }
     fsutil::write_atomic(&p, text.as_bytes())
 }
@@ -87,7 +88,7 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
                 }
                 let path = line[3..].trim();
                 let path = path.rsplit(" -> ").next().unwrap_or(path).trim_matches('"');
-                if path.ends_with(".md") {
+                if fsutil::is_markdown(Path::new(path)) {
                     set.insert(path.to_string());
                 }
             }
@@ -100,7 +101,7 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
                     .output();
                 if let Ok(o2) = o2 {
                     for line in String::from_utf8_lossy(&o2.stdout).lines() {
-                        if line.ends_with(".md") {
+                        if fsutil::is_markdown(Path::new(line.trim())) {
                             set.insert(line.trim().to_string());
                         }
                     }
@@ -158,7 +159,7 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
         if n == 0 {
             continue;
         }
-        let out = re.replace_all(&text, |c: &regex::Captures| {
+        let out = re.replace_all(&text, |c: &regex::Captures<'_>| {
             let h = c.get(1).map_or("", |m| m.as_str());
             let a = c.get(2).map_or("", |m| m.as_str());
             format!("[[{new_title}{h}{a}]]")
@@ -231,8 +232,8 @@ pub fn dedupe(vault: &Vault, threshold: f64) -> Vec<DupeCandidate> {
                     // token overlap
                     let tx: HashSet<&str> = x.split_whitespace().collect();
                     let ty: HashSet<&str> = y.split_whitespace().collect();
-                    let inter = tx.intersection(&ty).count() as f64;
-                    let uni = tx.union(&ty).count() as f64;
+                    let inter = crate::count_f64(tx.intersection(&ty).count());
+                    let uni = crate::count_f64(tx.union(&ty).count());
                     if uni > 0.0 {
                         best = best.max(inter / uni);
                     }
@@ -290,7 +291,9 @@ pub fn trace(vault: &Vault, chain: &[String]) -> Result<(Vec<String>, Vec<TraceR
         let want_type = &chain[k + 1];
         let mut next: Vec<Vec<String>> = vec![];
         for row in rows {
-            let last = row.last().unwrap().clone();
+            let Some(last) = row.last().cloned() else {
+                continue;
+            };
             if last == "—" {
                 let mut r = row.clone();
                 r.push("—".into());
@@ -392,24 +395,59 @@ pub fn archive(vault: &Vault, target: &str) -> Result<Vec<String>> {
 
 // ---------- export ----------
 
-pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> Result<String> {
-    let excluded: Vec<String> = if include_confidential {
-        vec![]
-    } else {
-        vault.config.privacy.exclude_from_export.clone()
-    };
-    let mut pages: Vec<&Page> = vec![];
+/// Pages named by `targets`: each target is a page name, or else a folder prefix
+/// (pages under it that pass `keep`).
+fn select_pages<'v, 't>(
+    vault: &'v Vault,
+    targets: impl IntoIterator<Item = &'t str>,
+    keep: impl Fn(&Page) -> bool,
+) -> Vec<&'v Page> {
+    let mut pages = vec![];
     for t in targets {
         if let Some(p) = vault.resolve_page(t) {
             pages.push(p);
         } else {
-            for p in &vault.pages {
-                if p.rel.starts_with(t.trim_end_matches('/')) {
-                    pages.push(p);
-                }
-            }
+            let prefix = t.trim_end_matches('/');
+            pages.extend(
+                vault
+                    .pages
+                    .iter()
+                    .filter(|p| p.rel.starts_with(prefix) && keep(p)),
+            );
         }
     }
+    pages
+}
+
+/// One bibliography entry: `- **Title**, author (published), origin — retrieved date`.
+fn bibliography_line(sp: &Page) -> String {
+    let field = |key: &str, prefix: &str, suffix: &str| {
+        sp.get(key)
+            .filter(|v| !v.is_empty())
+            .map(|v| format!("{prefix}{v}{suffix}"))
+            .unwrap_or_default()
+    };
+    format!(
+        "- **{}**{}{}{} — retrieved {}",
+        sp.title,
+        field("author", ", ", ""),
+        field("published", " (", ")"),
+        field("origin", ", ", ""),
+        sp.get("retrieved").unwrap_or_default()
+    )
+}
+
+pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> Result<String> {
+    let excluded: &[String] = if include_confidential {
+        &[]
+    } else {
+        &vault.config.privacy.exclude_from_export
+    };
+    let confidentiality = |p: &Page| {
+        p.get("confidentiality")
+            .unwrap_or_else(|| "personal".into())
+    };
+    let pages = select_pages(vault, targets.iter().map(String::as_str), |_| true);
     if pages.is_empty() {
         bail!("nothing matched {targets:?}");
     }
@@ -417,66 +455,39 @@ pub fn export(vault: &Vault, targets: &[String], include_confidential: bool) -> 
     let mut bib: BTreeMap<String, &Page> = BTreeMap::new();
     let mut counter = 0usize;
     for p in pages {
-        let conf = p
-            .get("confidentiality")
-            .unwrap_or_else(|| "personal".into());
+        let conf = confidentiality(p);
         if excluded.contains(&conf) {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 "\n<!-- {} omitted: confidentiality {} -->\n",
                 p.rel, conf
-            ));
+            );
             continue;
         }
         let (cites, _) = cite::parse_citations(&p.doc.body);
         // renumber footnotes to keep labels unique across pages
         let mut body = renumber_footnotes(&p.doc.body, &mut counter);
         for c in &cites {
-            if let Some(sp) = vault.resolve_page(&c.source) {
-                let sc = sp
-                    .get("confidentiality")
-                    .unwrap_or_else(|| "personal".into());
-                if excluded.contains(&sc) {
-                    if let Some(q) = &c.quote {
-                        body = body.replace(q, "[quote withheld: confidential source]");
-                    }
-                } else {
-                    bib.insert(c.source.clone(), sp);
-                }
+            let Some(sp) = vault.resolve_page(&c.source) else {
+                continue;
+            };
+            if !excluded.contains(&confidentiality(sp)) {
+                bib.insert(c.source.clone(), sp);
+            } else if let Some(q) = &c.quote {
+                body = body.replace(q, "[quote withheld: confidential source]");
             }
         }
         if !body.trim_start().starts_with("# ") {
-            out.push_str(&format!("\n# {}\n", p.title));
+            let _ = write!(out, "\n# {}\n", p.title);
         }
         out.push_str(&body);
         out.push('\n');
     }
     if !bib.is_empty() {
         out.push_str("\n## Sources\n\n");
-        for (id, sp) in bib {
-            let origin = sp.get("origin").unwrap_or_default();
-            let pubd = sp.get("published").unwrap_or_default();
-            let auth = sp.get("author").unwrap_or_default();
-            out.push_str(&format!(
-                "- **{}**{}{}{} — retrieved {}\n",
-                sp.title,
-                if auth.is_empty() {
-                    String::new()
-                } else {
-                    format!(", {auth}")
-                },
-                if pubd.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({pubd})")
-                },
-                if origin.is_empty() {
-                    String::new()
-                } else {
-                    format!(", {origin}")
-                },
-                sp.get("retrieved").unwrap_or_default()
-            ));
-            let _ = id;
+        for sp in bib.values() {
+            out.push_str(&bibliography_line(sp));
+            out.push('\n');
         }
     }
     Ok(out)
@@ -511,7 +522,7 @@ pub fn status(vault: &Vault) -> Result<Status> {
         ..Default::default()
     };
     let manifest = crate::manifest::Manifest::load(&vault.root)?;
-    s.last_lint = manifest.last_lint.clone();
+    s.last_lint.clone_from(&manifest.last_lint);
     for p in &vault.pages {
         *s.by_type
             .entry(if p.ptype.is_empty() {
@@ -572,28 +583,28 @@ pub fn review_packet(
     targets: &[String],
     context_lines: usize,
 ) -> Result<String> {
-    let mut pages: Vec<&Page> = vec![];
-    for t in targets {
-        if let Some(p) = vault.resolve_page(t) {
-            pages.push(p);
-        } else {
-            for p in &vault.pages {
-                if p.rel.starts_with(t.trim_end_matches('/')) && !p.rel.starts_with("indexes/") {
-                    pages.push(p);
-                }
-            }
-        }
-    }
+    let pages = select_pages(vault, targets.iter().map(String::as_str), |p| {
+        !p.rel.starts_with("indexes/")
+    });
     if pages.is_empty() {
         bail!("nothing matched {targets:?}");
     }
     let mut out = String::new();
-    out.push_str(&format!("# Review packet — persona: {persona}\n\nGenerated {} by `commonplace review prepare`. Pages: {}\n\n", fsutil::now_iso(), pages.iter().map(|p| p.rel.clone()).collect::<Vec<_>>().join(", ")));
+    let _ = write!(
+        out,
+        "# Review packet — persona: {persona}\n\nGenerated {} by `commonplace review prepare`. Pages: {}\n\n",
+        fsutil::now_iso(),
+        pages
+            .iter()
+            .map(|p| p.rel.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     out.push_str("## Persona brief\n\n");
     out.push_str(persona_text.trim());
     out.push_str("\n\n## Output format\n\nReturn ONLY a JSON array of findings, each:\n```json\n{\"severity\": \"blocker|major|minor|note\", \"page\": \"<rel path>\", \"location\": \"<heading or line>\", \"claim\": \"<the sentence at issue>\", \"problem\": \"<what is wrong>\", \"evidence\": \"<verbatim quote from the page or source span that shows it>\", \"recommendation\": \"<concrete fix>\"}\n```\nReturn `[]` if nothing is wrong. Do not edit any file. Every finding must carry an `evidence` quote.\n\n");
     for p in pages {
-        out.push_str(&format!("---\n\n## Page: {}\n\n", p.rel));
+        let _ = write!(out, "---\n\n## Page: {}\n\n", p.rel);
         out.push_str("```markdown\n");
         out.push_str(&frontmatter::render(&p.doc.fm, &p.doc.body)?);
         out.push_str("\n```\n\n");
@@ -603,10 +614,11 @@ pub fn review_packet(
         }
         out.push_str("### Cited source spans\n\n");
         for c in &cites {
-            out.push_str(&format!(
+            let _ = write!(
+                out,
                 "#### [^{}] → [[{}]] {}\n\n",
                 c.label, c.source, c.locator_raw
-            ));
+            );
             match sources::load_text_layer(&vault.root, &c.source) {
                 Ok(Some(tl)) => {
                     let (v, found, _near, msg) = cite::verify_quote(
@@ -615,7 +627,7 @@ pub fn review_packet(
                         vault.config.lint.quote_min_words,
                         vault.config.lint.quote_max_words,
                     );
-                    out.push_str(&format!("Deterministic check: **{v:?}** — {msg}\n\n"));
+                    let _ = write!(out, "Deterministic check: **{v:?}** — {msg}\n\n");
                     let lines: Vec<&str> = tl.text.lines().collect();
                     let centre = found.or_else(|| {
                         cite::span(&tl.text, &c.locator).and_then(|s| s.first().map(|x| x.0))
@@ -625,7 +637,7 @@ pub fn review_packet(
                         let to = (l + context_lines * 4).min(lines.len());
                         out.push_str("```text\n");
                         for (i, line) in lines.iter().enumerate().take(to).skip(from) {
-                            out.push_str(&format!("{:>5} | {}\n", i + 1, line));
+                            let _ = writeln!(out, "{:>5} | {}", i + 1, line);
                         }
                         out.push_str("```\n\n");
                     }
@@ -656,100 +668,35 @@ pub fn review_record(
     let findings: Vec<serde_json::Value> = serde_json::from_str(findings_json.trim())
         .map_err(|e| anyhow!("findings must be a JSON array: {e}"))?;
     let today = fsutil::today();
-    let mut per_page: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
-    for f in &findings {
-        let page = f
-            .get("page")
-            .and_then(|v| v.as_str())
+    let text_of = |f: &serde_json::Value, k: &str| {
+        f.get(k)
+            .and_then(serde_json::Value::as_str)
             .unwrap_or("")
-            .to_string();
-        per_page.entry(page).or_default().push(f);
+            .to_string()
+    };
+    let mut per_page: BTreeMap<String, usize> = BTreeMap::new();
+    for f in &findings {
+        *per_page.entry(text_of(f, "page")).or_default() += 1;
     }
     let blockers = findings
         .iter()
-        .filter(|f| f.get("severity").and_then(|v| v.as_str()) == Some("blocker"))
+        .filter(|f| text_of(f, "severity") == "blocker")
         .count();
-    // review page
-    let scope_title = fsutil::safe_title(scope);
-    let rel = format!("reviews/{today} {persona} {scope_title}.md");
-    let mut fm = serde_yaml::Mapping::new();
-    frontmatter::set_str(&mut fm, "type", "review");
-    frontmatter::set_str(&mut fm, "persona", persona);
-    frontmatter::set_str(&mut fm, "date", &today);
-    frontmatter::set_str(&mut fm, "scope", scope);
-    if let Some(m) = model {
-        frontmatter::set_str(&mut fm, "model", m);
-    }
-    frontmatter::set_value(
-        &mut fm,
-        "findings",
-        serde_yaml::Value::Number(findings.len().into()),
-    );
-    frontmatter::set_value(
-        &mut fm,
-        "blockers",
-        serde_yaml::Value::Number(blockers.into()),
-    );
-    frontmatter::set_str(&mut fm, "resolution", "pending");
-    let mut body = format!(
-        "# Review: {persona} on {scope}\n\n{} finding(s), {} blocker(s). Resolve each: fix, waive (with reason), or file as an open question.\n\n",
-        findings.len(),
-        blockers
-    );
-    for f in &findings {
-        let g = |k: &str| f.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-        body.push_str(&format!("## [{}] {} — {}\n\n- **Claim:** {}\n- **Problem:** {}\n- **Evidence:** {}\n- **Recommendation:** {}\n- **Resolution:** _pending_\n\n", g("severity"), g("page"), g("location"), g("claim"), g("problem"), g("evidence"), g("recommendation")));
-    }
-    fsutil::write_atomic(
-        &vault.root.join(&rel),
-        frontmatter::render(&fm, &body)?.as_bytes(),
-    )?;
-    // stamp pages
-    let mut updated = vec![];
-    let all_pages: Vec<&Page> = {
-        let mut v = vec![];
-        for t in scope.split(',') {
-            let t = t.trim();
-            if let Some(p) = vault.resolve_page(t) {
-                v.push(p);
-            } else {
-                for p in &vault.pages {
-                    if p.rel.starts_with(t.trim_end_matches('/')) && p.ptype != "index" {
-                        v.push(p);
-                    }
-                }
-            }
-        }
-        v
+    let review = ReviewPage {
+        persona,
+        scope,
+        model,
+        date: &today,
     };
-    for p in all_pages {
-        let n = per_page.get(&p.rel).map_or(0, std::vec::Vec::len);
-        let text = std::fs::read_to_string(&p.path)?;
-        let mut doc = frontmatter::parse(&text)?;
-        let mut reviews = match doc.fm.get("reviews") {
-            Some(serde_yaml::Value::Sequence(s)) => s.clone(),
-            _ => vec![],
-        };
-        let mut entry = serde_yaml::Mapping::new();
-        frontmatter::set_str(&mut entry, "persona", persona);
-        frontmatter::set_str(&mut entry, "date", &today);
-        if let Some(m) = model {
-            frontmatter::set_str(&mut entry, "model", m);
-        }
-        frontmatter::set_str(
-            &mut entry,
-            "result",
-            if n == 0 { "pass" } else { "findings" },
-        );
-        frontmatter::set_value(&mut entry, "findings", serde_yaml::Value::Number(n.into()));
-        frontmatter::set_str(
-            &mut entry,
-            "review",
-            &format!("[[{}]]", fsutil::stem(Path::new(&rel))),
-        );
-        reviews.push(serde_yaml::Value::Mapping(entry));
-        frontmatter::set_value(&mut doc.fm, "reviews", serde_yaml::Value::Sequence(reviews));
-        fsutil::write_atomic(&p.path, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())?;
+    let rel = review.write(vault, &findings, blockers, text_of)?;
+    let review_link = format!("[[{}]]", fsutil::stem(Path::new(&rel)));
+    let pages = select_pages(vault, scope.split(',').map(str::trim), |p| {
+        p.ptype != "index"
+    });
+    let mut updated = vec![];
+    for p in pages {
+        let n = per_page.get(&p.rel).copied().unwrap_or(0);
+        review.stamp(p, n, &review_link)?;
         updated.push(p.rel.clone());
     }
     Ok(ReviewRecord {
@@ -757,6 +704,104 @@ pub fn review_record(
         findings: findings.len(),
         blockers,
     })
+}
+
+/// One persona review being recorded.
+struct ReviewPage<'a> {
+    persona: &'a str,
+    scope: &'a str,
+    model: Option<&'a str>,
+    date: &'a str,
+}
+
+impl ReviewPage<'_> {
+    /// Write `reviews/<date> <persona> <scope>.md` listing every finding; returns its path.
+    fn write(
+        &self,
+        vault: &Vault,
+        findings: &[serde_json::Value],
+        blockers: usize,
+        text_of: impl Fn(&serde_json::Value, &str) -> String,
+    ) -> Result<String> {
+        let (persona, scope) = (self.persona, self.scope);
+        let rel = format!(
+            "reviews/{} {persona} {}.md",
+            self.date,
+            fsutil::safe_title(scope)
+        );
+        let mut fm = serde_yaml::Mapping::new();
+        frontmatter::set_str(&mut fm, "type", "review");
+        frontmatter::set_str(&mut fm, "persona", persona);
+        frontmatter::set_str(&mut fm, "date", self.date);
+        frontmatter::set_str(&mut fm, "scope", scope);
+        if let Some(m) = self.model {
+            frontmatter::set_str(&mut fm, "model", m);
+        }
+        frontmatter::set_value(
+            &mut fm,
+            "findings",
+            serde_yaml::Value::Number(findings.len().into()),
+        );
+        frontmatter::set_value(
+            &mut fm,
+            "blockers",
+            serde_yaml::Value::Number(blockers.into()),
+        );
+        frontmatter::set_str(&mut fm, "resolution", "pending");
+        let mut body = format!(
+            "# Review: {persona} on {scope}\n\n{} finding(s), {blockers} blocker(s). Resolve each: fix, waive (with reason), or file as an open question.\n\n",
+            findings.len(),
+        );
+        for f in findings {
+            let g = |k: &str| text_of(f, k);
+            let _ = write!(
+                body,
+                "## [{}] {} — {}\n\n- **Claim:** {}\n- **Problem:** {}\n- **Evidence:** {}\n- **Recommendation:** {}\n- **Resolution:** _pending_\n\n",
+                g("severity"),
+                g("page"),
+                g("location"),
+                g("claim"),
+                g("problem"),
+                g("evidence"),
+                g("recommendation")
+            );
+        }
+        fsutil::write_atomic(
+            &vault.root.join(&rel),
+            frontmatter::render(&fm, &body)?.as_bytes(),
+        )?;
+        Ok(rel)
+    }
+
+    /// Append this review to a page's `reviews` frontmatter list.
+    fn stamp(&self, p: &Page, findings: usize, review_link: &str) -> Result<()> {
+        let text = std::fs::read_to_string(&p.path)?;
+        let mut doc = frontmatter::parse(&text)?;
+        let mut reviews = match doc.fm.get("reviews") {
+            Some(serde_yaml::Value::Sequence(s)) => s.clone(),
+            _ => vec![],
+        };
+        let mut entry = serde_yaml::Mapping::new();
+        frontmatter::set_str(&mut entry, "persona", self.persona);
+        frontmatter::set_str(&mut entry, "date", self.date);
+        if let Some(m) = self.model {
+            frontmatter::set_str(&mut entry, "model", m);
+        }
+        frontmatter::set_str(
+            &mut entry,
+            "result",
+            if findings == 0 { "pass" } else { "findings" },
+        );
+        frontmatter::set_value(
+            &mut entry,
+            "findings",
+            serde_yaml::Value::Number(findings.into()),
+        );
+        frontmatter::set_str(&mut entry, "review", review_link);
+        reviews.push(serde_yaml::Value::Mapping(entry));
+        frontmatter::set_value(&mut doc.fm, "reviews", serde_yaml::Value::Sequence(reviews));
+        fsutil::write_atomic(&p.path, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())
+    }
 }
 
 // ---------- backlinks / links ----------
@@ -821,14 +866,9 @@ fn renumber_footnotes(body: &str, counter: &mut usize) -> String {
 }
 
 pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
-    let page = vault
-        .resolve_page(target)
-        .ok_or_else(|| anyhow!("no page named '{target}'"))?;
-    let idx = vault
-        .pages
-        .iter()
-        .position(|p| std::ptr::eq(p, page))
-        .unwrap();
+    let crate::vault::Resolution::Found(idx) = vault.resolve(target) else {
+        bail!("no page named '{target}'");
+    };
     let bl = vault.backlinks();
     let mut v: Vec<String> = bl
         .get(&idx)

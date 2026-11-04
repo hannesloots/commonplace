@@ -19,10 +19,12 @@ pub(crate) fn new(ctx: &Ctx, a: &NewArgs) -> Result<i32> {
     let rep = scaffold::new_page(
         &root,
         &cfg,
-        &a.r#type,
-        &a.title,
-        a.folder.as_deref(),
-        &extra,
+        &scaffold::NewPage {
+            ptype: &a.r#type,
+            title: &a.title,
+            folder: a.folder.as_deref(),
+            extra: &extra,
+        },
     )?;
     if ctx.json {
         print_json(&rep)?;

@@ -191,48 +191,20 @@ fn fill(s: &str, name: &str, purpose: &str, title: &str) -> String {
         .replace("{{year}}", &fsutil::today()[..4])
 }
 
-/// Create (or with `force`, re-apply templates to) a commonplace at `root`.
-///
-/// # Errors
-///
-/// `already_exists` when `commonplace.toml` exists and `force` is off; `io` on write failure.
-pub fn init(
-    root: &Path,
-    name: &str,
-    purpose: &str,
-    packs: &[String],
-    jurisdiction: &str,
-    force: bool,
-) -> Result<InitReport> {
-    let mut rep = InitReport {
-        root: root.display().to_string(),
-        ..Default::default()
-    };
-    std::fs::create_dir_all(root)?;
-    if crate::config::config_path(root).exists() && !force {
-        return Err(Error::already_exists_with(
-            format!("{}/commonplace.toml", root.display()),
-            "use --force to re-apply templates; existing pages are never overwritten",
-        ));
-    }
-    for d in DIRS {
-        std::fs::create_dir_all(root.join(d))?;
-    }
-    let tool = crate::vault::tool_dir(root);
-    std::fs::create_dir_all(tool.join("templates"))?;
-    std::fs::create_dir_all(tool.join("packs"))?;
+/// The config `init` writes: the existing one (or defaults) with `opts` applied.
+fn init_config(root: &Path, opts: &InitOptions<'_>) -> Result<Config> {
     let mut cfg = if crate::config::config_path(root).exists() {
         Config::load(root)?
     } else {
         Config::default()
     };
-    if !name.is_empty() {
-        cfg.name = name.to_string();
+    if !opts.name.is_empty() {
+        cfg.name = opts.name.to_string();
     }
-    if !purpose.is_empty() {
-        cfg.purpose = purpose.to_string();
+    if !opts.purpose.is_empty() {
+        cfg.purpose = opts.purpose.to_string();
     }
-    for raw in packs {
+    for raw in opts.packs {
         let (p, jur) = normalise_pack(raw);
         if !known_packs().contains(&p) {
             return Err(Error::invalid_input(format!(
@@ -247,9 +219,52 @@ pub fn init(
             cfg.jurisdiction = j.to_string();
         }
     }
-    if !jurisdiction.is_empty() {
-        cfg.jurisdiction = jurisdiction.to_string();
+    if !opts.jurisdiction.is_empty() {
+        cfg.jurisdiction = opts.jurisdiction.to_string();
     }
+    Ok(cfg)
+}
+
+/// What `init` should set up.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InitOptions<'a> {
+    /// The commonplace's name (empty keeps the template default).
+    pub name: &'a str,
+    /// One line on what it is for (empty keeps the template default).
+    pub purpose: &'a str,
+    /// Packs to enable, optionally as `pack:jurisdiction` (e.g. `legal:za`).
+    pub packs: &'a [String],
+    /// Jurisdiction profile for the legal pack (empty keeps the default).
+    pub jurisdiction: &'a str,
+    /// Re-apply templates to an existing commonplace (pages are never overwritten).
+    pub force: bool,
+}
+
+/// Create (or with `force`, re-apply templates to) a commonplace at `root`.
+///
+/// # Errors
+///
+/// `already_exists` when `commonplace.toml` exists and `force` is off;
+/// `invalid_input` for an unknown pack; `io` on write failure.
+pub fn init(root: &Path, opts: &InitOptions<'_>) -> Result<InitReport> {
+    let mut rep = InitReport {
+        root: root.display().to_string(),
+        ..Default::default()
+    };
+    std::fs::create_dir_all(root)?;
+    if crate::config::config_path(root).exists() && !opts.force {
+        return Err(Error::already_exists_with(
+            format!("{}/commonplace.toml", root.display()),
+            "use --force to re-apply templates; existing pages are never overwritten",
+        ));
+    }
+    for d in DIRS {
+        std::fs::create_dir_all(root.join(d))?;
+    }
+    let tool = crate::vault::tool_dir(root);
+    std::fs::create_dir_all(tool.join("templates"))?;
+    std::fs::create_dir_all(tool.join("packs"))?;
+    let cfg = init_config(root, opts)?;
     cfg.save(root)?;
     rep.created.push("commonplace.toml".into());
     for (fname, content) in ROOT_FILES {
@@ -426,19 +441,31 @@ fn extra_field_value(v: &str) -> serde_yaml::Value {
     }
 }
 
+/// The page `new` should create.
+#[derive(Debug, Clone, Copy)]
+pub struct NewPage<'a> {
+    /// Page type (core or pack), e.g. `concept`, `capability`.
+    pub ptype: &'a str,
+    /// Title; also the file name. May be empty for `journal` (today's date).
+    pub title: &'a str,
+    /// Folder relative to the root; `None` uses the type's default folder.
+    pub folder: Option<&'a str>,
+    /// Extra frontmatter fields, as given with `--set key=value`.
+    pub extra: &'a [(String, String)],
+}
+
 /// Create a page of type `ptype` from its template.
 ///
 /// # Errors
 ///
 /// `invalid_input` for an empty title or a type that needs a folder; `already_exists` when the title is taken.
-pub fn new_page(
-    root: &Path,
-    cfg: &Config,
-    ptype: &str,
-    title: &str,
-    folder: Option<&str>,
-    extra: &[(String, String)],
-) -> Result<NewReport> {
+pub fn new_page(root: &Path, cfg: &Config, page: &NewPage<'_>) -> Result<NewReport> {
+    let NewPage {
+        ptype,
+        title,
+        folder,
+        extra,
+    } = *page;
     let title = if ptype == "journal" && title.is_empty() {
         fsutil::today()
     } else {

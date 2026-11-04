@@ -14,11 +14,13 @@ pub(crate) fn init(ctx: &Ctx, a: InitArgs) -> Result<i32> {
     };
     let rep = scaffold::init(
         &root,
-        &a.name,
-        &a.purpose,
-        &a.pack,
-        &a.jurisdiction,
-        a.force,
+        &scaffold::InitOptions {
+            name: &a.name,
+            purpose: &a.purpose,
+            packs: &a.pack,
+            jurisdiction: &a.jurisdiction,
+            force: a.force,
+        },
     )?;
     // generate an index so the commonplace lints clean from the start; a
     // failure here is not fatal, `commonplace index` can be rerun later

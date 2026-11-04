@@ -654,6 +654,15 @@ pub fn status(vault: &Vault) -> Result<Status> {
 
 // ---------- review packets ----------
 
+/// A reviewer persona: its name and its brief (the persona file's text).
+#[derive(Debug, Clone, Copy)]
+pub struct Persona<'a> {
+    /// Persona name, e.g. `skeptic`.
+    pub name: &'a str,
+    /// The brief the reviewer works from.
+    pub brief: &'a str,
+}
+
 /// Build a review packet: the persona brief, the target pages and every cited span with `context_lines` of context.
 ///
 /// # Errors
@@ -661,11 +670,14 @@ pub fn status(vault: &Vault) -> Result<Status> {
 /// `invalid_input` when nothing matches `targets`.
 pub fn review_packet(
     vault: &Vault,
-    persona_text: &str,
-    persona: &str,
+    persona: &Persona<'_>,
     targets: &[String],
     context_lines: usize,
 ) -> Result<String> {
+    let Persona {
+        name: persona,
+        brief: persona_text,
+    } = *persona;
     let pages = select_pages(vault, targets.iter().map(String::as_str), |p| {
         !p.rel.starts_with("indexes/")
     });
@@ -752,8 +764,8 @@ pub struct ReviewRecord {
 pub fn review_record(
     vault: &Vault,
     persona: &str,
-    findings_json: &str,
     scope: &str,
+    findings_json: &str,
     model: Option<&str>,
 ) -> Result<ReviewRecord> {
     let findings: Vec<serde_json::Value> = serde_json::from_str(findings_json.trim())

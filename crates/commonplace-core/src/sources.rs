@@ -154,22 +154,40 @@ fn store_raw(src: &Path, raw_path: &Path, move_file: bool) -> Result<()> {
 }
 
 /// Write the text layer for a converted source; returns its sha256.
+/// Provenance written into a text layer's frontmatter.
+struct TextLayerHeader<'a> {
+    id: &'a str,
+    raw_rel: &'a str,
+    raw_sha: &'a str,
+    /// Lowercase extension of the original, for the warning.
+    ext: &'a str,
+    conv: &'a ConvertResult,
+}
+
+/// The text layer an ingest wrote: (path, sha256, page count), all `None`
+/// when no converter could handle the file.
+type WrittenLayer = (Option<String>, Option<String>, Option<usize>);
+
+/// Write the converted text layer, or, when conversion failed, add a warning
+/// telling the agent how to write it by hand.
 fn write_text_layer(
     root: &Path,
-    text_rel: &str,
-    id: &str,
-    raw_rel: &str,
-    raw_sha: &str,
-    conv: &ConvertResult,
-    c: &Converted,
-) -> Result<String> {
+    header: &TextLayerHeader<'_>,
+    warnings: &mut Vec<String>,
+) -> Result<WrittenLayer> {
+    let (id, ext) = (header.id, header.ext);
+    let text_rel = format!("{TEXT_DIR}/{id}.text.md");
+    let Some(c) = &header.conv.markdown else {
+        warnings.push(format!("no converter could handle .{ext}: {}. Write the text layer yourself at {text_rel} (see references/ingest.md) and run `commonplace source attach-text \"{id}\"`.", header.conv.reason));
+        return Ok((None, None, None));
+    };
     let mut fm = serde_yaml::Mapping::new();
     frontmatter::set_str(&mut fm, "type", "source-text");
-    frontmatter::set_str(&mut fm, "source", id);
-    frontmatter::set_str(&mut fm, "raw", raw_rel);
-    frontmatter::set_str(&mut fm, "raw_sha256", raw_sha);
-    frontmatter::set_str(&mut fm, "converter", &conv.converter);
-    frontmatter::set_str(&mut fm, "fidelity", &conv.fidelity);
+    frontmatter::set_str(&mut fm, "source", header.id);
+    frontmatter::set_str(&mut fm, "raw", header.raw_rel);
+    frontmatter::set_str(&mut fm, "raw_sha256", header.raw_sha);
+    frontmatter::set_str(&mut fm, "converter", &header.conv.converter);
+    frontmatter::set_str(&mut fm, "fidelity", &header.conv.fidelity);
     if let Some(p) = c.pages {
         frontmatter::set_value(&mut fm, "pages", serde_yaml::Value::Number(p.into()));
     }
@@ -184,8 +202,8 @@ fn write_text_layer(
         "Faithful rendition of the original. Do not edit; re-convert instead.",
     );
     let text = frontmatter::render(&fm, &c.text)?;
-    fsutil::write_atomic(&root.join(text_rel), text.as_bytes())?;
-    Ok(fsutil::sha256_str(&text))
+    fsutil::write_atomic(&root.join(&text_rel), text.as_bytes())?;
+    Ok((Some(text_rel), Some(fsutil::sha256_str(&text)), c.pages))
 }
 
 /// What a new source note records about its source.
@@ -351,15 +369,15 @@ pub fn ingest(
         opts.converter.as_deref(),
         opts.origin.as_deref(),
     )?;
-    let text_rel = format!("{TEXT_DIR}/{id}.text.md");
     let needs_conversion = conv.markdown.is_none();
-    let (text, text_sha, pages) = if let Some(c) = &conv.markdown {
-        let text_sha = write_text_layer(root, &text_rel, &id, &raw_rel, &sha, &conv, c)?;
-        (Some(text_rel), Some(text_sha), c.pages)
-    } else {
-        warnings.push(format!("no converter could handle .{ext}: {}. Write the text layer yourself at {text_rel} (see references/ingest.md) and run `commonplace source attach-text \"{id}\"`.", conv.reason));
-        (None, None, None)
+    let header = TextLayerHeader {
+        id: &id,
+        raw_rel: &raw_rel,
+        raw_sha: &sha,
+        ext: &ext,
+        conv: &conv,
     };
+    let (text, text_sha, pages) = write_text_layer(root, &header, &mut warnings)?;
 
     let note_rel = format!("{NOTES_DIR}/{id}.md");
     let fields = NoteFields {

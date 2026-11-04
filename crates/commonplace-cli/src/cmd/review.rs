@@ -21,7 +21,7 @@ pub(crate) fn review(ctx: &Ctx, cmd: ReviewCmd) -> Result<i32> {
             model,
         } => {
             let fj = std::fs::read_to_string(&findings)?;
-            let rep = ops::review_record(&v, &persona, &fj, &scope, model.as_deref())?;
+            let rep = ops::review_record(&v, &persona, &scope, &fj, model.as_deref())?;
             if ctx.json {
                 print_json(&rep)?;
             } else {
@@ -45,7 +45,15 @@ fn prepare(
     out: Option<PathBuf>,
 ) -> Result<i32> {
     let text = scaffold::persona_text(&v.root, skill_dir().as_deref(), &v.config, persona)?;
-    let packet = ops::review_packet(v, &text, persona, targets, v.config.review.context_lines)?;
+    let packet = ops::review_packet(
+        v,
+        &ops::Persona {
+            name: persona,
+            brief: &text,
+        },
+        targets,
+        v.config.review.context_lines,
+    )?;
     let out = out.unwrap_or_else(|| {
         vault::tool_dir(&v.root).join("reviews").join(format!(
             "{} {} {} packet.md",

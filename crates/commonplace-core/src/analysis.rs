@@ -89,11 +89,11 @@ impl Net {
             return vec![];
         }
         let restart: Vec<f64> = if seeds.is_empty() {
-            vec![1.0 / n as f64; n]
+            vec![1.0 / crate::count_f64(n); n]
         } else {
             let mut r = vec![0.0; n];
             for &s in seeds {
-                r[s] = 1.0 / seeds.len() as f64;
+                r[s] = 1.0 / crate::count_f64(seeds.len());
             }
             r
         };
@@ -138,7 +138,7 @@ impl Net {
         for z in na.intersection(&nb) {
             let d = self.degree(*z);
             if d > 1 {
-                score += 1.0 / (d as f64).ln();
+                score += 1.0 / crate::count_f64(d).ln();
                 shared.push(*z);
             }
         }
@@ -300,7 +300,7 @@ impl Net {
             }
         }
         let scale = if sources.len() < n {
-            n as f64 / sources.len() as f64
+            crate::count_f64(n) / crate::count_f64(sources.len())
         } else {
             1.0
         };
@@ -388,7 +388,7 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
         let mut score = 0.0;
         let mut reasons = vec![];
         if let Some(rels) = direct.get(&c) {
-            score += 1.0 * rels.len() as f64;
+            score += crate::count_f64(rels.len());
             reasons.push(format!(
                 "linked: {}",
                 rels.iter().cloned().collect::<Vec<_>>().join(", ")
@@ -396,7 +396,7 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
         }
         let shared_src: Vec<String> = p_sources.intersection(&sources_of(c)).cloned().collect();
         if !shared_src.is_empty() {
-            score += 0.4 * shared_src.len() as f64;
+            score += 0.4 * crate::count_f64(shared_src.len());
             reasons.push(format!(
                 "cites {} same source{}: {}",
                 shared_src.len(),
@@ -427,7 +427,7 @@ pub fn related(g: &Graph, vault: &Vault, page: &str, limit: usize) -> Option<Vec
         }
         let shared_tags: Vec<String> = p_tags.intersection(&tags_of(c)).cloned().collect();
         if !shared_tags.is_empty() {
-            score += 0.2 * shared_tags.len() as f64;
+            score += 0.2 * crate::count_f64(shared_tags.len());
             reasons.push(format!("shares tags {}", shared_tags.join(", ")));
         }
         if ppr_max > 0.0 && ppr[c] > 0.0 {
@@ -916,7 +916,7 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
             .collect();
         let shared = sa.intersection(&sb).count();
         if shared > 0 {
-            score += 1.0 + 0.3 * shared as f64;
+            score += 1.0 + 0.3 * crate::count_f64(shared);
             reasons.push(format!(
                 "{shared} shared source{}",
                 if shared == 1 { "" } else { "s" }
@@ -932,7 +932,8 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
             tokens(&pb.get("description").unwrap_or_default()),
         );
         if !ta.is_empty() && !tb.is_empty() {
-            let j = ta.intersection(&tb).count() as f64 / ta.union(&tb).count() as f64;
+            let j = crate::count_f64(ta.intersection(&tb).count())
+                / crate::count_f64(ta.union(&tb).count());
             if j >= 0.3 {
                 score += j * 2.0;
                 reasons.push(format!("descriptions overlap ({:.0}%)", j * 100.0));
@@ -940,7 +941,7 @@ pub fn conflicts(vault: &Vault, limit: usize) -> Vec<ConflictCandidate> {
         }
         let shared_tags = pa.tags.iter().filter(|t| pb.tags.contains(t)).count();
         if shared_tags >= 2 {
-            score += 0.2 * shared_tags as f64;
+            score += 0.2 * crate::count_f64(shared_tags);
             reasons.push(format!("{shared_tags} shared tags"));
         }
         let (ua, ub) = (

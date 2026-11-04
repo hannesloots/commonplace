@@ -118,7 +118,7 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
             }
         }
     }
-    let n = docs.len() as f64;
+    let n = crate::count_f64(docs.len());
     if n == 0.0 {
         return vec![];
     }
@@ -128,7 +128,7 @@ pub fn search(vault: &Vault, query: &str, opts: &SearchOptions) -> Vec<Hit> {
     for q in &qtokens {
         df.insert(
             q,
-            docs.iter().filter(|d| d.tf.contains_key(q)).count() as f64,
+            crate::count_f64(docs.iter().filter(|d| d.tf.contains_key(q)).count()),
         );
     }
     let (k1, b) = (1.2, 0.75);

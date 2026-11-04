@@ -232,8 +232,8 @@ pub fn dedupe(vault: &Vault, threshold: f64) -> Vec<DupeCandidate> {
                     // token overlap
                     let tx: HashSet<&str> = x.split_whitespace().collect();
                     let ty: HashSet<&str> = y.split_whitespace().collect();
-                    let inter = tx.intersection(&ty).count() as f64;
-                    let uni = tx.union(&ty).count() as f64;
+                    let inter = crate::count_f64(tx.intersection(&ty).count());
+                    let uni = crate::count_f64(tx.union(&ty).count());
                     if uni > 0.0 {
                         best = best.max(inter / uni);
                     }

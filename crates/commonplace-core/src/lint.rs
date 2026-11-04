@@ -313,8 +313,8 @@ impl<'c, 'a> PageCheck<'c, 'a> {
     }
 
     /// The file line of a byte offset into the masked body.
-    fn masked_line(&self, byte: usize) -> Option<usize> {
-        Some(self.body_line(self.masked[..byte].matches('\n').count() + 1))
+    fn masked_line(&self, byte: usize) -> usize {
+        self.body_line(self.masked[..byte].matches('\n').count() + 1)
     }
 
     fn run(mut self) -> Vec<Finding> {
@@ -719,7 +719,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
             self.push(
                 Severity::Error,
                 "SEC-001",
-                self.masked_line(m.start()),
+                Some(self.masked_line(m.start())),
                 "looks like a credential or private key; remove it".into(),
             );
         }
@@ -731,7 +731,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
                 self.push(
                     Severity::Warning,
                     "TERM-001",
-                    self.masked_line(pos),
+                    Some(self.masked_line(pos)),
                     format!(
                         "retired term '{term}' still appears; update to the current term or mark the page superseded"
                     ),
@@ -1039,7 +1039,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
                     self.push(
                         sev,
                         &r.id,
-                        self.masked_line(m.start()),
+                        Some(self.masked_line(m.start())),
                         rule_message(r, &extra),
                     );
                 }
@@ -1123,7 +1123,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
             .map(|m| (m.start(), m.as_str().to_string()))
             .collect();
         for (start, text) in matches {
-            let line = self.masked_line(start);
+            let line = Some(self.masked_line(start));
             let Some(q) = find_page_by_field(self.cx.vault, &r.page_type, &r.page_field, &text)
             else {
                 let extra = format!(

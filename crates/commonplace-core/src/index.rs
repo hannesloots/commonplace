@@ -92,230 +92,210 @@ struct Group {
     pages: Vec<usize>,
 }
 
-pub fn generate(vault: &Vault) -> Result<IndexReport> {
-    let mut report = IndexReport::default();
-    let threshold = vault.config.index.hub_threshold;
-    let mut groups: Vec<Group> = vec![];
-    let pages = &vault.pages;
-    let idx = |pred: &dyn Fn(&Page) -> bool| -> Vec<usize> {
-        let mut v: Vec<usize> = pages
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| pred(p) && p.parse_error.is_none())
-            .map(|(i, _)| i)
-            .collect();
-        v.sort_by_key(|&i| pages[i].stem.to_lowercase());
-        v
-    };
-    let is_hub = |p: &Page| {
-        p.rel == "index.md"
-            || p.rel.starts_with("indexes/")
-            || p.ptype == "index"
-            || p.ptype == "log"
-    };
+/// Navigation pages, which are never listed as content.
+fn is_hub(p: &Page) -> bool {
+    p.rel == "index.md" || p.rel.starts_with("indexes/") || p.ptype == "index" || p.ptype == "log"
+}
 
-    groups.push(Group {
-        title: "Projects".into(),
-        pages: idx(&|p| p.ptype == "project" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Areas".into(),
-        pages: idx(&|p| p.ptype == "area" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Memory".into(),
-        pages: idx(&|p| p.top_folder() == "memory" && !["person"].contains(&p.ptype.as_str())),
-    });
-    groups.push(Group {
-        title: "People".into(),
-        pages: idx(&|p| p.ptype == "person" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Topics".into(),
-        pages: idx(&|p| p.ptype == "topic" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Concepts".into(),
-        pages: idx(&|p| p.ptype == "concept" || p.ptype == "claim"),
-    });
-    groups.push(Group {
-        title: "Entities".into(),
-        pages: idx(&|p| p.ptype == "entity" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Playbooks".into(),
-        pages: idx(&|p| p.ptype == "playbook" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Syntheses".into(),
-        pages: idx(&|p| p.ptype == "synthesis" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Decisions".into(),
-        pages: idx(&|p| p.ptype == "decision" && !p.is_archived()),
-    });
-    groups.push(Group {
-        title: "Open questions".into(),
-        pages: idx(&|p| p.ptype == "question" && p.get("status").as_deref() == Some("open")),
-    });
-    // pack types not covered
-    let covered = [
-        "project",
-        "area",
-        "person",
-        "topic",
-        "concept",
-        "claim",
-        "entity",
-        "playbook",
-        "synthesis",
-        "decision",
-        "question",
-        "source",
-        "journal",
-        "capture",
-        "review",
-        "index",
-        "log",
-        "registry",
-        "overview",
-        "questions",
-        "error-book",
-        "profile",
-        "preferences",
-        "glossary",
+/// Types with their own group (or deliberately unlisted); any other type gets a "<Type> pages" group.
+const GROUPED_TYPES: [&str; 24] = [
+    "project",
+    "area",
+    "person",
+    "topic",
+    "concept",
+    "claim",
+    "entity",
+    "playbook",
+    "synthesis",
+    "decision",
+    "question",
+    "source",
+    "journal",
+    "capture",
+    "review",
+    "index",
+    "log",
+    "registry",
+    "overview",
+    "questions",
+    "error-book",
+    "profile",
+    "preferences",
+    "glossary",
+];
+
+/// A group of the parseable pages matching `pred`, sorted by stem (case-insensitive).
+fn group(title: &str, pages: &[Page], pred: impl Fn(&Page) -> bool) -> Group {
+    let mut v: Vec<usize> = pages
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| pred(p) && p.parse_error.is_none())
+        .map(|(i, _)| i)
+        .collect();
+    v.sort_by_key(|&i| pages[i].stem.to_lowercase());
+    Group {
+        title: title.into(),
+        pages: v,
+    }
+}
+
+/// The sections of index.md, in display order.
+fn index_groups(pages: &[Page]) -> Vec<Group> {
+    let live = |t: &'static str| move |p: &Page| p.ptype == t && !p.is_archived();
+    let mut groups = vec![
+        group("Projects", pages, live("project")),
+        group("Areas", pages, live("area")),
+        group("Memory", pages, |p| {
+            p.top_folder() == "memory" && p.ptype != "person"
+        }),
+        group("People", pages, live("person")),
+        group("Topics", pages, live("topic")),
+        group("Concepts", pages, |p| {
+            p.ptype == "concept" || p.ptype == "claim"
+        }),
+        group("Entities", pages, live("entity")),
+        group("Playbooks", pages, live("playbook")),
+        group("Syntheses", pages, live("synthesis")),
+        group("Decisions", pages, live("decision")),
+        group("Open questions", pages, |p| {
+            p.ptype == "question" && p.get("status").as_deref() == Some("open")
+        }),
     ];
-    let mut other: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    // pack types not covered above, one group per type
+    let mut other: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (i, p) in pages.iter().enumerate() {
-        if !covered.contains(&p.ptype.as_str())
+        if !GROUPED_TYPES.contains(&p.ptype.as_str())
             && !p.ptype.is_empty()
             && !is_hub(p)
             && !p.is_archived()
             && p.top_folder() != "memory"
         {
-            other.entry(p.ptype.clone()).or_default().push(i);
+            other.entry(p.ptype.as_str()).or_default().push(i);
         }
     }
-    for (t, v) in other {
-        groups.push(Group {
-            title: format!("{} pages", capitalise(&t)),
-            pages: v,
-        });
-    }
-    groups.push(Group {
-        title: "Sources".into(),
-        pages: idx(&|p| p.ptype == "source"),
-    });
-    groups.push(Group {
-        title: "Journal".into(),
-        pages: {
-            let mut v = idx(&|p| p.ptype == "journal");
-            v.reverse();
-            v
-        },
-    });
-    groups.push(Group {
-        title: "Archive".into(),
-        pages: idx(&|p| p.is_archived() && !is_hub(p)),
-    });
+    groups.extend(other.into_iter().map(|(t, v)| Group {
+        title: format!("{} pages", capitalise(t)),
+        pages: v,
+    }));
+    groups.push(group("Sources", pages, |p| p.ptype == "source"));
+    let mut journal = group("Journal", pages, |p| p.ptype == "journal");
+    journal.pages.reverse();
+    groups.push(journal);
+    groups.push(group("Archive", pages, |p| p.is_archived() && !is_hub(p)));
+    groups
+}
 
-    let indexes_dir = vault.root.join("indexes");
-    let mut body = String::new();
-    let _ = write!(
-        body,
-        "# Index — {}\n\n",
-        if vault.config.name.is_empty() {
-            "commonplace"
-        } else {
-            &vault.config.name
-        }
-    );
+/// Append one index line per page.
+fn push_lines(out: &mut String, pages: &[Page], members: &[usize]) {
+    for &i in members {
+        out.push_str(&line_for(&pages[i]));
+        out.push('\n');
+    }
+}
+
+/// The title and hand-kept orientation block that open index.md.
+fn index_header(vault: &Vault) -> String {
+    let name = if vault.config.name.is_empty() {
+        "commonplace"
+    } else {
+        &vault.config.name
+    };
     let existing = std::fs::read_to_string(vault.root.join("index.md")).unwrap_or_default();
     let keep = markdown::generated_block(&existing, "keep").map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| {
         format!("{}\n\nStart here: [[overview]] for the big picture, [[error-book]] for standing constraints, [[open-questions]] for what is unresolved.", vault.config.purpose)
     });
+    let mut body = format!("# Index — {name}\n\n");
     body.push_str("<!-- commonplace:keep:start -->\n");
     body.push_str(&keep);
     body.push_str("\n<!-- commonplace:keep:end -->\n\n");
     body.push_str("<!-- Everything below is generated by `commonplace index`. Edit the orientation above, never the lists. -->\n\n");
-    let mut wanted_hubs: Vec<String> = vec![];
-    for g in &groups {
+    body
+}
+
+/// Whether a group is too big (or too archival) to list inline, so it gets its own hub page.
+fn needs_hub(g: &Group, threshold: usize) -> bool {
+    g.pages.len() > threshold
+        || g.title == "Archive"
+        || (g.title == "Sources" && g.pages.len() > threshold / 2)
+}
+
+/// Write `indexes/<hub_name>.md` listing a group's pages; sources and journals are grouped by year.
+fn write_hub(vault: &Vault, hub_name: &str, g: &Group) -> Result<()> {
+    let pages = &vault.pages;
+    let mut fm = serde_yaml::Mapping::new();
+    frontmatter::set_str(&mut fm, "type", "index");
+    frontmatter::set_str(&mut fm, "group", &g.title);
+    frontmatter::set_value(
+        &mut fm,
+        "page_count",
+        serde_yaml::Value::Number(g.pages.len().into()),
+    );
+    frontmatter::set_str(&mut fm, "updated", &fsutil::today());
+    let mut h =
+        format!("# {hub_name}\n\nGenerated by `commonplace index`; do not edit. Up: [[index]]\n\n");
+    if g.title == "Sources" || g.title == "Journal" {
+        let mut by_year: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for &i in &g.pages {
+            let y: String = pages[i].stem.chars().take(4).collect();
+            let key = if y.chars().all(|c| c.is_ascii_digit()) {
+                y
+            } else {
+                "undated".into()
+            };
+            by_year.entry(key).or_default().push(i);
+        }
+        for (y, v) in by_year.iter().rev() {
+            let _ = writeln!(h, "## {y}");
+            push_lines(&mut h, pages, v);
+            h.push('\n');
+        }
+    } else {
+        push_lines(&mut h, pages, &g.pages);
+    }
+    let dir = vault.root.join("indexes");
+    std::fs::create_dir_all(&dir)?;
+    fsutil::write_atomic(
+        &dir.join(format!("{hub_name}.md")),
+        frontmatter::render(&fm, &h)?.as_bytes(),
+    )
+}
+
+/// Delete `indexes/Index - *.md` hubs that this run did not write.
+fn remove_stale_hubs(vault: &Vault, wanted: &[String]) {
+    let Ok(rd) = std::fs::read_dir(vault.root.join("indexes")) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let s = fsutil::stem(&e.path());
+        if s.starts_with("Index - ") && !wanted.contains(&s) {
+            // best effort: a hub that cannot be removed is only stale navigation
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
+pub fn generate(vault: &Vault) -> Result<IndexReport> {
+    let mut report = IndexReport::default();
+    let threshold = vault.config.index.hub_threshold;
+    let pages = &vault.pages;
+    let mut body = index_header(vault);
+    for g in index_groups(pages) {
         if g.pages.is_empty() {
             continue;
         }
         let _ = writeln!(body, "## {} ({})", g.title, g.pages.len());
-        if g.pages.len() > threshold
-            || g.title == "Archive"
-            || (g.title == "Sources" && g.pages.len() > threshold / 2)
-        {
+        if needs_hub(&g, threshold) {
             let hub_name = format!("Index - {}", g.title);
-            wanted_hubs.push(hub_name.clone());
             let _ = write!(body, "- [[{hub_name}]] — {} pages\n\n", g.pages.len());
-            let mut h = String::new();
-            let mut fm = serde_yaml::Mapping::new();
-            frontmatter::set_str(&mut fm, "type", "index");
-            frontmatter::set_str(&mut fm, "group", &g.title);
-            frontmatter::set_value(
-                &mut fm,
-                "page_count",
-                serde_yaml::Value::Number(g.pages.len().into()),
-            );
-            frontmatter::set_str(&mut fm, "updated", &fsutil::today());
-            let _ = write!(
-                h,
-                "# {hub_name}\n\nGenerated by `commonplace index`; do not edit. Up: [[index]]\n\n"
-            );
-            // group sources by year, others alphabetically with letter headings when large
-            if g.title == "Sources" || g.title == "Journal" {
-                let mut by_year: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-                for &i in &g.pages {
-                    let y = pages[i].stem.chars().take(4).collect::<String>();
-                    by_year
-                        .entry(if y.chars().all(|c| c.is_ascii_digit()) {
-                            y
-                        } else {
-                            "undated".into()
-                        })
-                        .or_default()
-                        .push(i);
-                }
-                for (y, v) in by_year.iter().rev() {
-                    let _ = writeln!(h, "## {y}");
-                    for &i in v {
-                        h.push_str(&line_for(&pages[i]));
-                        h.push('\n');
-                    }
-                    h.push('\n');
-                }
-            } else {
-                for &i in &g.pages {
-                    h.push_str(&line_for(&pages[i]));
-                    h.push('\n');
-                }
-            }
-            std::fs::create_dir_all(&indexes_dir)?;
-            fsutil::write_atomic(
-                &indexes_dir.join(format!("{hub_name}.md")),
-                frontmatter::render(&fm, &h)?.as_bytes(),
-            )?;
+            write_hub(vault, &hub_name, &g)?;
             report.hubs.push(hub_name);
         } else {
-            for &i in &g.pages {
-                body.push_str(&line_for(&pages[i]));
-                body.push('\n');
-            }
+            push_lines(&mut body, pages, &g.pages);
             body.push('\n');
         }
     }
-    // remove stale hubs
-    if let Ok(rd) = std::fs::read_dir(&indexes_dir) {
-        for e in rd.flatten() {
-            let s = fsutil::stem(&e.path());
-            if s.starts_with("Index - ") && !wanted_hubs.contains(&s) {
-                let _ = std::fs::remove_file(e.path());
-            }
-        }
-    }
+    remove_stale_hubs(vault, &report.hubs);
     let mut fm = serde_yaml::Mapping::new();
     frontmatter::set_str(&mut fm, "type", "index");
     frontmatter::set_str(&mut fm, "updated", &fsutil::today());
@@ -327,57 +307,69 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
     let text = frontmatter::render(&fm, &body)?;
     report.index_lines = text.lines().count();
     fsutil::write_atomic(&vault.root.join("index.md"), text.as_bytes())?;
+    update_maps_of_content(vault, &mut report)?;
+    Ok(report)
+}
 
-    // Maps of content inside project / area / topic pages
-    for p in pages {
-        if !["project", "area", "topic"].contains(&p.ptype.as_str()) || p.parse_error.is_some() {
-            continue;
+/// The pages a project, area or topic page lists in its generated "pages" block.
+///
+/// A topic lists pages in its `scope` (a tag such as `topic/x` or `#x`, or a folder prefix);
+/// a project or area lists pages in its folder and pages that point to it via
+/// `project`/`projects`/`area`/`up`. Returns `None` for a topic without a scope.
+fn moc_members<'v>(p: &Page, pages: &'v [Page]) -> Option<Vec<&'v Page>> {
+    let candidates = pages.iter().filter(|q| !std::ptr::eq(p, *q) && !is_hub(q));
+    if p.ptype == "topic" {
+        let scope = p.get("scope").unwrap_or_default();
+        if scope.is_empty() {
+            return None;
         }
-        let folder = p.folder();
-        let mut members: Vec<&Page> = vec![];
-        if p.ptype == "topic" {
-            let scope = p.get("scope").unwrap_or_default();
-            if scope.is_empty() {
-                continue;
-            }
-            for q in pages {
-                if std::ptr::eq(p, q) || is_hub(q) {
-                    continue;
-                }
-                let in_scope = if scope.starts_with("topic/") || scope.starts_with('#') {
-                    q.tags.iter().any(|t| t == scope.trim_start_matches('#'))
-                } else {
-                    q.rel.starts_with(scope.trim_end_matches('/'))
-                };
-                if in_scope {
-                    members.push(q);
-                }
-            }
-        } else {
-            for q in pages {
-                if std::ptr::eq(p, q) || is_hub(q) {
-                    continue;
-                }
+        let by_tag = scope.starts_with("topic/") || scope.starts_with('#');
+        return Some(
+            candidates
+                .filter(|q| {
+                    if by_tag {
+                        q.tags.iter().any(|t| t == scope.trim_start_matches('#'))
+                    } else {
+                        q.rel.starts_with(scope.trim_end_matches('/'))
+                    }
+                })
+                .collect(),
+        );
+    }
+    let folder = p.folder();
+    Some(
+        candidates
+            .filter(|q| {
                 let in_folder = !folder.is_empty() && q.rel.starts_with(&format!("{folder}/"));
                 let points_here = q.fm_links.iter().any(|(k, t)| {
                     ["project", "projects", "area", "up"].contains(&k.as_str())
                         && t.eq_ignore_ascii_case(&p.stem)
                 });
-                if in_folder || points_here {
-                    members.push(q);
-                }
-            }
+                in_folder || points_here
+            })
+            .collect(),
+    )
+}
+
+/// Rewrite the generated page list inside project / area / topic pages.
+fn update_maps_of_content(vault: &Vault, report: &mut IndexReport) -> Result<()> {
+    for p in &vault.pages {
+        if !["project", "area", "topic"].contains(&p.ptype.as_str()) || p.parse_error.is_some() {
+            continue;
         }
+        let Some(mut members) = moc_members(p, &vault.pages) else {
+            continue;
+        };
         if members.is_empty() && markdown::generated_block(&p.doc.body, "pages").is_none() {
             continue;
         }
         members.sort_by_key(|q| (q.ptype.clone(), q.stem.to_lowercase()));
         let mut block = String::new();
-        let mut cur = String::new();
+        let mut cur = "";
         for q in &members {
             if q.ptype != cur {
-                cur.clone_from(&q.ptype);
-                let _ = writeln!(block, "**{}**", capitalise(&cur));
+                cur = &q.ptype;
+                let _ = writeln!(block, "**{}**", capitalise(cur));
             }
             block.push_str(&line_for(q));
             block.push('\n');
@@ -391,7 +383,7 @@ pub fn generate(vault: &Vault) -> Result<IndexReport> {
             report.mocs_updated.push(p.rel.clone());
         }
     }
-    Ok(report)
+    Ok(())
 }
 
 fn capitalise(s: &str) -> String {

@@ -33,3 +33,14 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) fn re(pattern: &str) -> regex::Regex {
     regex::Regex::new(pattern).expect("built-in regex literal is valid")
 }
+
+/// A count (pages, links, terms, tags) as `f64` for scoring.
+///
+/// Counts in this crate are far below 2^52, where every integer is exact in `f64`.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "counts are far below 2^52, where f64 represents every integer exactly"
+)]
+pub(crate) fn count_f64(n: usize) -> f64 {
+    n as f64
+}

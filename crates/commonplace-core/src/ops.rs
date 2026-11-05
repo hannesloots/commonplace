@@ -93,19 +93,22 @@ fn git_changed_markdown(root: &Path) -> Option<HashSet<String>> {
             .ok()
             .filter(|o| o.status.success())
     };
-    let status = git(&["status", "--porcelain", "-z", "--untracked-files=all"])?;
-    let mut paths = porcelain_z_paths(&status.stdout);
-    if paths.is_empty()
-        && let Some(diff) = git(&["diff", "--name-only", "-z", "HEAD~1", "HEAD"])
-    {
-        paths = nul_separated(&diff.stdout).map(String::from).collect();
-    }
-    Some(
+    let markdown_only = |paths: Vec<String>| -> HashSet<String> {
         paths
             .into_iter()
             .filter(|p| fsutil::is_markdown(Path::new(p)))
-            .collect(),
-    )
+            .collect()
+    };
+    let status = git(&["status", "--porcelain", "-z", "--untracked-files=all"])?;
+    let mut paths = markdown_only(porcelain_z_paths(&status.stdout));
+    // Only non-markdown files dirty (the manifest is, after almost every run):
+    // treat the tree as clean and report the pages of the last commit.
+    if paths.is_empty()
+        && let Some(diff) = git(&["diff", "--name-only", "-z", "HEAD~1", "HEAD"])
+    {
+        paths = markdown_only(nul_separated(&diff.stdout).map(String::from).collect());
+    }
+    Some(paths)
 }
 
 /// NUL-separated, non-empty fields of git `-z` output (never quoted or escaped).

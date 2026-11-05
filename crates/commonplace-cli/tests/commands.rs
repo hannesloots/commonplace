@@ -283,3 +283,51 @@ fn query_compares_two_fields_with_or_without_backticks() {
         );
     }
 }
+
+#[test]
+fn lint_changed_falls_back_to_the_last_commit_when_only_non_markdown_is_dirty() {
+    let root = demo_vault();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "base"]);
+    let stub =
+        "projects/demo-engagement/architecture/building-blocks/Onboarding Workflow Service.md";
+    let mut text = std::fs::read_to_string(root.join(stub)).unwrap();
+    text.push_str("\n<!-- touched -->\n");
+    std::fs::write(root.join(stub), text).unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "touch one stub"]);
+    // A plain lint rewrites the manifest, so the tree is dirty but no page is.
+    run(&root, &["lint"]);
+
+    let report = run_json(&root, &["lint", "--changed"], 0);
+    let paths: Vec<&str> = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["path"].as_str())
+        .collect();
+    assert!(
+        paths.contains(&stub),
+        "last commit's page not linted: {report}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.ends_with("Customer Onboarding.md")),
+        "an untouched page was linted: {report}"
+    );
+}

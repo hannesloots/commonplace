@@ -101,6 +101,9 @@ jobs:
           git clone --depth 1 git@github.com:hannesloots/shelf.git mkt
           rm -rf mkt/plugins/commonplace && mkdir -p mkt/plugins/commonplace
           (cd mkt/plugins/commonplace && unzip -q "$GITHUB_WORKSPACE/out/commonplace-plugin.zip" && rm -f .claude-plugin/marketplace.json)
+          # the dev repo ignores built binaries under bin/; the marketplace must track them
+          rm -f mkt/plugins/commonplace/skills/commonplace/bin/.gitignore
+          test -n "$(ls mkt/plugins/commonplace/skills/commonplace/bin/commonplace-* 2>/dev/null)" || { echo "no binaries in the plugin"; exit 1; }
           VERSION="${GITHUB_REF_NAME#v}"
           jq --arg v "$VERSION" '(.plugins[] | select(.name == "commonplace") | .version) = $v' mkt/.claude-plugin/marketplace.json > mkt/.claude-plugin/marketplace.json.new
           mv mkt/.claude-plugin/marketplace.json.new mkt/.claude-plugin/marketplace.json

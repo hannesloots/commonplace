@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-11-05
 
 - Errors have stable codes. A failed command (exit 2) prints
   `error[<code>]: <message>` and a `hint:` line on stderr; with `--json` it

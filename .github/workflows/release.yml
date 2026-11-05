@@ -2,7 +2,14 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Run by hand to (re)publish an existing release to the shelf marketplace
+  # without rebuilding: Actions -> release -> Run workflow -> tag (e.g. v0.6.0).
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish to shelf (e.g. v0.6.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,6 +18,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +30,7 @@ jobs:
           ./target/debug/commonplace --root fixtures/demo lint --fail-on error
 
   build:
+    if: github.event_name == 'push'
     needs: test
     strategy:
       matrix:
@@ -61,6 +70,7 @@ jobs:
           path: dist/*
 
   package:
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -90,7 +100,24 @@ jobs:
             out/commonplace-plugin.zip
             artifacts/*/commonplace-*
             skills/commonplace/bin/SHA256SUMS
-      - name: publish the built plugin to the shelf marketplace (hannesloots/shelf)
+
+  publish:
+    # Push the built plugin into the shelf marketplace (hannesloots/shelf).
+    # Runs after a tag release, or alone when dispatched by hand with a tag.
+    needs: package
+    if: ${{ always() && (needs.package.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: download the plugin from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir rel \
+            --pattern commonplace-plugin.zip --pattern SHA256SUMS
+          ls -la rel
+      - name: publish to shelf
         env:
           DEPLOY_KEY: ${{ secrets.MARKETPLACE_DEPLOY_KEY }}
         run: |
@@ -98,18 +125,26 @@ jobs:
           mkdir -p ~/.ssh && printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/marketplace && chmod 600 ~/.ssh/marketplace
           ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/marketplace -o IdentitiesOnly=yes"
-          git clone --depth 1 git@github.com:hannesloots/shelf.git mkt
+          git clone -q git@github.com:hannesloots/shelf.git mkt
           rm -rf mkt/plugins/commonplace && mkdir -p mkt/plugins/commonplace
-          (cd mkt/plugins/commonplace && unzip -q "$GITHUB_WORKSPACE/out/commonplace-plugin.zip" && rm -f .claude-plugin/marketplace.json)
+          (cd mkt/plugins/commonplace && unzip -q "$GITHUB_WORKSPACE/rel/commonplace-plugin.zip" && rm -f .claude-plugin/marketplace.json)
           # the dev repo ignores built binaries under bin/; the marketplace must track them
           rm -f mkt/plugins/commonplace/skills/commonplace/bin/.gitignore
+          (cd mkt/plugins/commonplace/skills/commonplace/bin && sha256sum -c --ignore-missing --strict "$GITHUB_WORKSPACE/rel/SHA256SUMS")
           test -n "$(ls mkt/plugins/commonplace/skills/commonplace/bin/commonplace-* 2>/dev/null)" || { echo "no binaries in the plugin"; exit 1; }
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG#v}"
           jq --arg v "$VERSION" '(.plugins[] | select(.name == "commonplace") | .version) = $v' mkt/.claude-plugin/marketplace.json > mkt/.claude-plugin/marketplace.json.new
           mv mkt/.claude-plugin/marketplace.json.new mkt/.claude-plugin/marketplace.json
           cd mkt
           git config user.name "commonplace release"
           git config user.email "release@users.noreply.github.com"
           git add -A
-          git commit -m "commonplace $VERSION" || echo "nothing to publish"
-          git push
+          if git diff --cached --quiet; then echo "shelf already has commonplace $VERSION; nothing to publish"; exit 0; fi
+          git commit -q -m "commonplace $VERSION"
+          for attempt in 1 2 3; do
+            if git push -q origin HEAD:master; then echo "published commonplace $VERSION to shelf"; exit 0; fi
+            echo "push to shelf failed (attempt $attempt of 3)"; sleep 30
+            git pull -q --rebase origin master || true
+          done
+          echo "::error::could not push to shelf after 3 attempts. Re-run this workflow by hand with tag=$TAG, or publish manually (see README)."
+          exit 1

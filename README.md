@@ -67,6 +67,13 @@ cargo test && sh scripts/dev/make-fixture.sh
 ```
 
 Binaries for other targets come from the release workflow (`git tag v0.1.0 && git push --tags`).
+Its last job pushes the built plugin into the `shelf` marketplace. If that push
+fails, or to republish a release, run the workflow by hand with the tag
+(`gh workflow run release.yml -f tag=v0.6.0`, or Actions → release → Run
+workflow); it downloads the plugin zip from the release and skips the build.
+To publish by hand: unzip `commonplace-plugin.zip` into `plugins/commonplace/`
+in a shelf checkout, delete `skills/commonplace/bin/.gitignore` there, set the
+version in `.claude-plugin/marketplace.json`, commit and push.
 
 ## Using the tool directly
 

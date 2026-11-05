@@ -99,6 +99,7 @@ locator unknown, 006 no quote, 007/008 quote length, 009 no text layer, 010/011
 footnote ref/def mismatch, 012 unsourced page, 013 sources list broken), DUP,
 CON (contradictions), SUP (supersession), STALE, SIZE, TERM (retired terms),
 SEC (secrets), PRIV (confidentiality flow), PROJ, DATE, LOG, IDX, EMPTY, INBOX,
+PACK (001 a pack rule's regex does not compile, so the rule never fires),
 and pack rules (TOG-, LEG-, CMP-, STU-). Silence a rule in `commonplace.toml`
 `[lint] disabled_rules`.
 

@@ -8,6 +8,9 @@
   stdout, so an agent can branch on the code. A missing page suggests the
   closest titles. Command-line usage errors with `--json` use code `usage`.
   The codes are listed in `references/cli.md`.
+- `lint` reports a pack rule whose regex does not compile (`PACK-001`,
+  error, on the pack's `pack.yaml`). Before, such a rule silently never
+  fired. Pack regexes are now compiled once per run, not once per page.
 - `graph walk` / `graph path`: `--direction` accepts only `out`, `in` or
   `both`; anything else is a `usage` error. Before, a typo silently meant
   `both`.

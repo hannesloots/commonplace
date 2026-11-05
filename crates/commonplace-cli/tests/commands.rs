@@ -149,6 +149,30 @@ fn pinned_clock_dates_new_pages_and_log_entries() {
 }
 
 #[test]
+fn pack_rule_with_invalid_regex_is_reported_once() {
+    let root = demo_vault();
+    let pack = root.join(".commonplace/packs/legal/pack.yaml");
+    let yaml = std::fs::read_to_string(&pack).unwrap();
+    let broken = yaml.replace(
+        r"pattern: '\[\^[A-Za-z0-9_\-]+\]'",
+        r"pattern: '\[\^(unclosed'",
+    );
+    assert_ne!(
+        broken, yaml,
+        "fixture rule LEG-005 changed; update this test"
+    );
+    std::fs::write(&pack, broken).unwrap();
+    let report = run_json(&root, &["lint", "--rule", "PACK"], 1);
+    let findings = report["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{report}");
+    let f = &findings[0];
+    assert_eq!(f["rule"], "PACK-001");
+    assert_eq!(f["severity"], "error");
+    assert_eq!(f["path"], ".commonplace/packs/legal/pack.yaml");
+    assert!(f["message"].as_str().unwrap().contains("LEG-005"), "{f}");
+}
+
+#[test]
 fn walk_direction_selects_outgoing_or_incoming_links() {
     let root = demo_vault();
     let nodes = |direction: &str| -> Vec<String> {

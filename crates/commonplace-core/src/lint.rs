@@ -238,6 +238,9 @@ struct Context<'a> {
     /// Index and log pages: links from these do not rescue an orphan.
     hubs: HashSet<usize>,
     pack_types: HashMap<&'a str, &'a pack::TypeSpec>,
+    /// Compiled patterns of the packs' regex rules, by pattern text; invalid
+    /// patterns are absent here and reported once by `check_pack_regexes`.
+    pack_regexes: HashMap<&'a str, Regex>,
 }
 
 impl<'a> Context<'a> {
@@ -261,8 +264,24 @@ impl<'a> Context<'a> {
                 .iter()
                 .flat_map(|p| p.types.iter().map(|(k, v)| (k.as_str(), v)))
                 .collect(),
+            pack_regexes: pack_regex_rules(packs)
+                .filter_map(|(_, r)| Some((r.pattern.as_str(), Regex::new(&r.pattern).ok()?)))
+                .collect(),
         }
     }
+}
+
+/// Pack rule checks whose `pattern` is a regex.
+const REGEX_CHECKS: &[&str] = &["forbid_regex", "require_regex", "body_regex_requires_page"];
+
+/// Every (pack, rule) pair whose rule matches a regex.
+fn pack_regex_rules(packs: &[Pack]) -> impl Iterator<Item = (&Pack, &pack::Rule)> {
+    packs.iter().flat_map(|pk| {
+        pk.rules
+            .iter()
+            .filter(|r| REGEX_CHECKS.contains(&r.check.as_str()))
+            .map(move |r| (pk, r))
+    })
 }
 
 /// Rank of a confidentiality level (higher = more restricted); unknown values rank as `personal`.
@@ -1073,7 +1092,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
             "link_field" => self.rule_link_field(r, &sev),
             "field_compare" => self.rule_field_compare(r, sev),
             "forbid_regex" => {
-                if let Ok(re) = Regex::new(&r.pattern)
+                if let Some(re) = self.cx.pack_regexes.get(r.pattern.as_str())
                     && let Some(m) = re.find(&self.masked)
                 {
                     let extra = format!("matched '{}'", m.as_str());
@@ -1086,7 +1105,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
                 }
             }
             "require_regex" => {
-                if let Ok(re) = Regex::new(&r.pattern)
+                if let Some(re) = self.cx.pack_regexes.get(r.pattern.as_str())
                     && !re.is_match(&self.masked)
                 {
                     self.push(sev, &r.id, None, rule_message(r, ""));
@@ -1156,7 +1175,7 @@ impl<'c, 'a> PageCheck<'c, 'a> {
     }
 
     fn rule_body_regex_requires_page(&mut self, r: &pack::Rule, sev: &Severity) {
-        let Ok(re) = Regex::new(&r.pattern) else {
+        let Some(re) = self.cx.pack_regexes.get(r.pattern.as_str()) else {
             return;
         };
         let matches: Vec<(usize, String)> = re
@@ -1320,6 +1339,37 @@ fn check_duplicate_names(vault: &Vault, out: &mut Vec<Finding>) {
     }
 }
 
+/// PACK-001: a pack regex rule whose pattern does not compile never fires,
+/// so say so once instead of silently skipping it on every page.
+fn check_pack_regexes(vault: &Vault, packs: &[Pack], out: &mut Vec<Finding>) {
+    for (pk, r) in pack_regex_rules(packs) {
+        if let Err(e) = Regex::new(&r.pattern) {
+            // regex errors span several lines (pattern, caret, message); keep the message
+            let reason = e.to_string();
+            let reason = reason
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("");
+            let file = crate::vault::tool_dir(&vault.root)
+                .join("packs")
+                .join(&pk.name)
+                .join("pack.yaml");
+            out.push(vault_finding(
+                Severity::Error,
+                "PACK-001",
+                crate::fsutil::rel(&vault.root, &file),
+                format!(
+                    "pack '{}' rule {} has an invalid pattern and never fires: {}",
+                    pk.name,
+                    r.id,
+                    reason.trim().trim_start_matches("error: ")
+                ),
+            ));
+        }
+    }
+}
+
 /// SRC-003: files in sources/raw with no source note.
 fn check_unregistered_raw(vault: &Vault, out: &mut Vec<Finding>) {
     let Ok(rd) = std::fs::read_dir(vault.root.join(sources::RAW_DIR)) else {
@@ -1441,6 +1491,7 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
     let cx = Context::new(vault, packs, opts);
     let mut findings = vec![];
     check_duplicate_names(vault, &mut findings);
+    check_pack_regexes(vault, packs, &mut findings);
     for (i, p) in vault.pages.iter().enumerate() {
         findings.extend(PageCheck::new(&cx, i, p).run());
     }

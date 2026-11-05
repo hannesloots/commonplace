@@ -81,50 +81,69 @@ pub fn log_rotate(root: &Path, keep: usize) -> Result<usize> {
 
 // ---------- changed set ----------
 
+/// Markdown files git reports as changed (or, on a clean tree, changed by the
+/// last commit); `None` when git is unavailable or fails.
+fn git_changed_markdown(root: &Path) -> Option<HashSet<String>> {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+    };
+    let status = git(&["status", "--porcelain", "-z", "--untracked-files=all"])?;
+    let mut paths = porcelain_z_paths(&status.stdout);
+    if paths.is_empty()
+        && let Some(diff) = git(&["diff", "--name-only", "-z", "HEAD~1", "HEAD"])
+    {
+        paths = nul_separated(&diff.stdout).map(String::from).collect();
+    }
+    Some(
+        paths
+            .into_iter()
+            .filter(|p| fsutil::is_markdown(Path::new(p)))
+            .collect(),
+    )
+}
+
+/// NUL-separated, non-empty fields of git `-z` output (never quoted or escaped).
+fn nul_separated(out: &[u8]) -> impl Iterator<Item = &str> {
+    out.split(|&b| b == 0)
+        .filter(|f| !f.is_empty())
+        .filter_map(|f| std::str::from_utf8(f).ok())
+}
+
+/// Paths from `git status --porcelain -z`: each entry is `XY path`; a rename
+/// or copy entry is followed by its original path, which is skipped.
+fn porcelain_z_paths(out: &[u8]) -> Vec<String> {
+    let mut paths = vec![];
+    let mut fields = nul_separated(out);
+    while let Some(entry) = fields.next() {
+        let (Some(status), Some(path)) = (entry.get(..2), entry.get(3..)) else {
+            continue;
+        };
+        paths.push(path.to_string());
+        if status.contains(['R', 'C']) {
+            fields.next();
+        }
+    }
+    paths
+}
+
 /// Markdown files changed since the last commit (git) or since the last lint (mtime).
 ///
 /// # Errors
 ///
 /// `io` when the folder cannot be walked.
 pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
-    let mut set = HashSet::new();
-    if root.join(".git").exists() {
-        let out = std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["status", "--porcelain", "--untracked-files=all"])
-            .output();
-        if let Ok(o) = out
-            && o.status.success()
-        {
-            for line in String::from_utf8_lossy(&o.stdout).lines() {
-                if line.len() < 4 {
-                    continue;
-                }
-                let path = line[3..].trim();
-                let path = path.rsplit(" -> ").next().unwrap_or(path).trim_matches('"');
-                if fsutil::is_markdown(Path::new(path)) {
-                    set.insert(path.to_string());
-                }
-            }
-            // also files changed in the last commit if the tree is clean
-            if set.is_empty() {
-                let o2 = std::process::Command::new("git")
-                    .arg("-C")
-                    .arg(root)
-                    .args(["diff", "--name-only", "HEAD~1", "HEAD"])
-                    .output();
-                if let Ok(o2) = o2 {
-                    for line in String::from_utf8_lossy(&o2.stdout).lines() {
-                        if fsutil::is_markdown(Path::new(line.trim())) {
-                            set.insert(line.trim().to_string());
-                        }
-                    }
-                }
-            }
-            return Ok(set);
-        }
+    if root.join(".git").exists()
+        && let Some(set) = git_changed_markdown(root)
+    {
+        return Ok(set);
     }
+    let mut set = HashSet::new();
     let manifest = crate::manifest::Manifest::load(root)?;
     let since = manifest
         .last_lint
@@ -995,6 +1014,21 @@ pub fn backlinks_of(vault: &Vault, target: &str) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::renumber_footnotes;
+
+    #[test]
+    fn porcelain_z_keeps_unicode_names_and_new_rename_targets() {
+        let out = " M resources/concepts/Café notes.md\0\
+                   ?? \"quoted\" name.md\0\
+                   R  new name.md\0old name.md\0";
+        assert_eq!(
+            super::porcelain_z_paths(out.as_bytes()),
+            [
+                "resources/concepts/Café notes.md",
+                "\"quoted\" name.md",
+                "new name.md"
+            ]
+        );
+    }
 
     #[test]
     fn renumbering_out_of_order_labels_keeps_references_distinct() {

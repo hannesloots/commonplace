@@ -29,7 +29,11 @@ Done = all four pass, no new `#[allow]`, every `#[expect]` has a `reason`.
   private or `pub(crate)` unless the CLI needs them. Functions under ~80 lines.
 - Output is a contract: the skill and hooks parse `--json` and the human output. Do not change
   either without updating `skills/commonplace` and CHANGELOG.md.
-- Tests assert behaviour. Regressions get a test next to the fixed code.
+- Tests assert behaviour. Regressions get a test next to the fixed code; CLI behaviour gets
+  one in `crates/commonplace-cli/tests/` (helpers in `tests/common`, clock pinned with
+  `COMMONPLACE_NOW`).
+- Core public items need `///` docs (`# Errors` naming the error codes) and `Debug`; the
+  compiler enforces both. Name tuning constants and say why the value was chosen.
 
 ## Workflow
 Plan first, then small diffs. For refactors, record CLI output on a copy of `fixtures/demo`

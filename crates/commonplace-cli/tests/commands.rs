@@ -192,6 +192,49 @@ fn corrupt_manifest_is_a_finding_and_is_left_untouched() {
 }
 
 #[test]
+fn review_record_writes_nothing_when_a_page_in_scope_is_broken() {
+    let root = demo_vault();
+    let good = root.join("projects/demo-engagement/architecture/business/Customer Onboarding.md");
+    let before = std::fs::read_to_string(&good).unwrap();
+    std::fs::write(
+        root.join("resources/concepts/Broken Page.md"),
+        "---\ntitle: Broken Page\n# never closed\n",
+    )
+    .unwrap();
+    let findings = scratch_dir("review").join("findings.json");
+    std::fs::write(&findings, "[]").unwrap();
+    let out = run(
+        &root,
+        &[
+            "--json",
+            "review",
+            "record",
+            "skeptic",
+            findings.to_str().unwrap(),
+            "--scope",
+            "Customer Onboarding,Broken Page",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    let e = common::json_error(&out);
+    assert_eq!(e["code"], "frontmatter", "{e}");
+    assert!(
+        e["message"].as_str().unwrap().contains("Broken Page"),
+        "{e}"
+    );
+    assert_eq!(std::fs::read_to_string(&good).unwrap(), before);
+    let reviews: Vec<_> = std::fs::read_dir(root.join("reviews"))
+        .map(|d| d.flatten().map(|e| e.file_name()).collect())
+        .unwrap_or_default();
+    assert!(
+        reviews
+            .iter()
+            .all(|n| !n.to_string_lossy().contains("skeptic")),
+        "{reviews:?}"
+    );
+}
+
+#[test]
 fn walk_direction_selects_outgoing_or_incoming_links() {
     let root = demo_vault();
     let nodes = |direction: &str| -> Vec<String> {

@@ -8,6 +8,10 @@
   stdout, so an agent can branch on the code. A missing page suggests the
   closest titles. Command-line usage errors with `--json` use code `usage`.
   The codes are listed in `references/cli.md`.
+- `review record` checks every page in scope before writing. Before, a page
+  with broken frontmatter stopped it after the review page and some stamps
+  were already written; the error now names the page. A missing findings
+  file is an `io` error that names the path.
 - An unreadable `.commonplace/manifest.json` made `lint` fail with exit 2
   after checking, so the Stop hook (which blocks on exit 1) let it pass.
   `lint` now reports it as `SRC-005` (error), skips the raw-file check that

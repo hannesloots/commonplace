@@ -810,19 +810,25 @@ pub fn review_record(
         model,
         date: &today,
     };
-    let rel = review.write(vault, &findings, blockers, text_of)?;
-    let review_link = format!("[[{}]]", fsutil::stem(Path::new(&rel)));
+    let review_link = format!("[[{}]]", fsutil::stem(Path::new(&review.rel())));
     let pages = select_pages(vault, scope.split(',').map(str::trim), |p| {
         p.ptype != "index"
     });
-    let mut updated = vec![];
-    for p in pages {
-        let n = per_page.get(&p.rel).copied().unwrap_or(0);
-        review.stamp(p, n, &review_link)?;
-        updated.push(p.rel.clone());
+    // Stamp every page in memory first: a page that cannot be read or parsed
+    // aborts the record before anything is written.
+    let stamped = pages
+        .into_iter()
+        .map(|p| {
+            let n = per_page.get(&p.rel).copied().unwrap_or(0);
+            Ok((p, review.stamped(p, n, &review_link)?))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    review.write(vault, &findings, blockers, text_of)?;
+    for (p, text) in &stamped {
+        fsutil::write_atomic(&p.path, text.as_bytes())?;
     }
     Ok(ReviewRecord {
-        pages_updated: updated,
+        pages_updated: stamped.iter().map(|(p, _)| p.rel.clone()).collect(),
         findings: findings.len(),
         blockers,
     })
@@ -837,20 +843,26 @@ struct ReviewPage<'a> {
 }
 
 impl ReviewPage<'_> {
-    /// Write `reviews/<date> <persona> <scope>.md` listing every finding; returns its path.
+    /// Vault-relative path of the review page: `reviews/<date> <persona> <scope>.md`.
+    fn rel(&self) -> String {
+        format!(
+            "reviews/{} {} {}.md",
+            self.date,
+            self.persona,
+            fsutil::safe_title(self.scope)
+        )
+    }
+
+    /// Write the review page listing every finding.
     fn write(
         &self,
         vault: &Vault,
         findings: &[serde_json::Value],
         blockers: usize,
         text_of: impl Fn(&serde_json::Value, &str) -> String,
-    ) -> Result<String> {
+    ) -> Result<()> {
         let (persona, scope) = (self.persona, self.scope);
-        let rel = format!(
-            "reviews/{} {persona} {}.md",
-            self.date,
-            fsutil::safe_title(scope)
-        );
+        let rel = self.rel();
         let mut fm = serde_yaml::Mapping::new();
         frontmatter::set_str(&mut fm, "type", "review");
         frontmatter::set_str(&mut fm, "persona", persona);
@@ -891,14 +903,14 @@ impl ReviewPage<'_> {
         fsutil::write_atomic(
             &vault.root.join(&rel),
             frontmatter::render(&fm, &body)?.as_bytes(),
-        )?;
-        Ok(rel)
+        )
     }
 
-    /// Append this review to a page's `reviews` frontmatter list.
-    fn stamp(&self, p: &Page, findings: usize, review_link: &str) -> Result<()> {
-        let text = std::fs::read_to_string(&p.path)?;
-        let mut doc = frontmatter::parse(&text)?;
+    /// The page's text with this review appended to its `reviews` frontmatter list.
+    fn stamped(&self, p: &Page, findings: usize, review_link: &str) -> Result<String> {
+        let text =
+            std::fs::read_to_string(&p.path).map_err(|e| Error::io("reading", &p.path, e))?;
+        let mut doc = frontmatter::parse(&text).map_err(|e| e.in_file(Path::new(&p.rel)))?;
         let mut reviews = match doc.fm.get("reviews") {
             Some(serde_yaml::Value::Sequence(s)) => s.clone(),
             _ => vec![],
@@ -922,7 +934,7 @@ impl ReviewPage<'_> {
         frontmatter::set_str(&mut entry, "review", review_link);
         reviews.push(serde_yaml::Value::Mapping(entry));
         frontmatter::set_value(&mut doc.fm, "reviews", serde_yaml::Value::Sequence(reviews));
-        fsutil::write_atomic(&p.path, frontmatter::render(&doc.fm, &doc.body)?.as_bytes())
+        frontmatter::render(&doc.fm, &doc.body)
     }
 }
 

@@ -20,7 +20,8 @@ pub(crate) fn review(ctx: &Ctx, cmd: ReviewCmd) -> Result<i32> {
             scope,
             model,
         } => {
-            let fj = std::fs::read_to_string(&findings)?;
+            let fj = std::fs::read_to_string(&findings)
+                .map_err(|e| commonplace_core::Error::io("reading", &findings, e))?;
             let rep = ops::review_record(&v, &persona, &scope, &fj, model.as_deref())?;
             if ctx.json {
                 print_json(&rep)?;

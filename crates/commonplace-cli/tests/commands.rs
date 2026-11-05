@@ -173,6 +173,25 @@ fn pack_rule_with_invalid_regex_is_reported_once() {
 }
 
 #[test]
+fn corrupt_manifest_is_a_finding_and_is_left_untouched() {
+    let root = demo_vault();
+    let manifest = root.join(".commonplace/manifest.json");
+    std::fs::write(&manifest, "{ not json").unwrap();
+    let report = run_json(&root, &["lint", "--rule", "SRC"], 1);
+    let findings = report["findings"].as_array().unwrap();
+    let f = findings
+        .iter()
+        .find(|f| f["rule"] == "SRC-005")
+        .unwrap_or_else(|| panic!("no SRC-005 in {report}"));
+    assert_eq!(f["path"], ".commonplace/manifest.json");
+    assert!(
+        findings.iter().all(|f| f["rule"] != "SRC-003"),
+        "raw files must not all be flagged as unregistered: {report}"
+    );
+    assert_eq!(std::fs::read_to_string(&manifest).unwrap(), "{ not json");
+}
+
+#[test]
 fn walk_direction_selects_outgoing_or_incoming_links() {
     let root = demo_vault();
     let nodes = |direction: &str| -> Vec<String> {

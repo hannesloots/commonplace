@@ -39,7 +39,7 @@ pub struct SourceRecord {
 }
 
 /// Where the manifest of the commonplace at `root` lives.
-fn manifest_path(root: &Path) -> PathBuf {
+pub(crate) fn manifest_path(root: &Path) -> PathBuf {
     crate::vault::tool_dir(root).join("manifest.json")
 }
 

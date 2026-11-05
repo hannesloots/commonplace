@@ -1371,11 +1371,30 @@ fn check_pack_regexes(vault: &Vault, packs: &[Pack], out: &mut Vec<Finding>) {
 }
 
 /// SRC-003: files in sources/raw with no source note.
+///
+/// SRC-005: the manifest exists but cannot be read, so sources cannot be
+/// checked against it (reported instead of treating it as empty, which would
+/// flag every raw file).
 fn check_unregistered_raw(vault: &Vault, out: &mut Vec<Finding>) {
+    let manifest = match crate::manifest::Manifest::load(&vault.root) {
+        Ok(m) => m,
+        Err(e) => {
+            let reason =
+                std::error::Error::source(&e).map_or_else(|| e.to_string(), ToString::to_string);
+            out.push(vault_finding(
+                Severity::Error,
+                "SRC-005",
+                crate::fsutil::rel(&vault.root, &crate::manifest::manifest_path(&vault.root)),
+                format!(
+                    "source manifest is unreadable ({reason}); restore it from git or a backup"
+                ),
+            ));
+            return;
+        }
+    };
     let Ok(rd) = std::fs::read_dir(vault.root.join(sources::RAW_DIR)) else {
         return;
     };
-    let manifest = crate::manifest::Manifest::load(&vault.root).unwrap_or_default();
     let registered: HashSet<&str> = manifest.sources.values().map(|r| r.raw.as_str()).collect();
     for e in rd.flatten() {
         let path = e.path();

@@ -34,9 +34,11 @@ pub(crate) fn lint(ctx: &Ctx, a: LintArgs) -> Result<i32> {
         },
     };
     let rep = lint::lint(&v, &packs, &opts);
-    let mut m = Manifest::load(&v.root)?;
-    m.last_lint = Some(fsutil::now_iso());
-    m.save(&v.root)?;
+    // an unreadable manifest is reported as SRC-005; never overwrite it
+    if let Ok(mut m) = Manifest::load(&v.root) {
+        m.last_lint = Some(fsutil::now_iso());
+        m.save(&v.root)?;
+    }
     if ctx.json {
         print_json(&rep)?;
     } else {

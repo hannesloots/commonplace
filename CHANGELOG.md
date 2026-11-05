@@ -8,6 +8,10 @@
   stdout, so an agent can branch on the code. A missing page suggests the
   closest titles. Command-line usage errors with `--json` use code `usage`.
   The codes are listed in `references/cli.md`.
+- An unreadable `.commonplace/manifest.json` made `lint` fail with exit 2
+  after checking, so the Stop hook (which blocks on exit 1) let it pass.
+  `lint` now reports it as `SRC-005` (error), skips the raw-file check that
+  would flag every source, and leaves the manifest untouched.
 - `lint --changed` (and the Stop hook that uses it) skipped changed files
   whose names had non-ASCII characters (`Café.md`), because git escaped
   them. It now reads git's NUL-separated output, which is never escaped.

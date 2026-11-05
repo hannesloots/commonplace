@@ -5,9 +5,35 @@ Launcher: `scripts/commonplace` (POSIX) or `scripts/commonplace.ps1` (Windows). 
 `--json` to any command for machine-readable output. `--root <path>` overrides
 root discovery (otherwise the tool walks up from the cwd to find `commonplace.toml`).
 
+Environment: `COMMONPLACE_NOW` pins the clock (`YYYY-MM-DD` or an RFC 3339
+timestamp) for every date the tool writes or compares (`created`, `updated`,
+log entries, staleness checks). Use it for repeatable runs; an unparseable
+value is ignored and the real clock is used.
+
 Exit codes: `0` ok · `1` findings at error level (lint, cite, links, review
-blockers) · `2` usage error · `3` integrity violation (a raw original or text
-layer changed since ingest: stop and tell the user).
+blockers) · `2` the command failed (see the error code) · `3` integrity violation
+(a raw original or text layer changed since ingest: stop and tell the user).
+
+On exit 2 the tool prints `error[<code>]: <message>` and an optional `hint:` line
+to stderr. With `--json` it prints this to stdout instead:
+`{"error": {"code", "message", "hint", "suggestions", "path"}}` (`hint` and `path`
+may be null; `suggestions` may be empty). Branch on `code`, never on the message:
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `page_not_found` | no page has that title, alias or path | retry with `suggestions[0]` if it fits, else `search` |
+| `source_not_found` | unknown source id | `source list` for ids |
+| `text_layer_missing` | the source has no text layer, or the locator is not in it | convert and `source attach-text` |
+| `already_exists` | the target page, file or folder exists | pick another name or edit the existing one |
+| `no_root` | no `commonplace.toml` above the cwd | pass `--root`, or `init` |
+| `invalid_query` | `query --where` did not parse | fix the expression |
+| `invalid_input` | a bad argument or input file (trace chain, format, findings JSON, ...) | read the message, fix the call |
+| `frontmatter` | a page's YAML frontmatter is malformed (`path` says which) | fix the YAML |
+| `conversion` | converting a document to markdown failed | `doctor`; convert by hand |
+| `io` | a file could not be read or written (`path` when known) | check the path and permissions |
+| `parse` | a YAML/JSON/TOML file did not parse (`path` when known) | fix the file |
+| `usage` | the command line itself was wrong (unknown flag, missing argument) | `commonplace <cmd> --help` |
+| `internal` | an unexpected error; a bug | report it with the message |
 
 ## Contents
 
@@ -73,6 +99,7 @@ locator unknown, 006 no quote, 007/008 quote length, 009 no text layer, 010/011
 footnote ref/def mismatch, 012 unsourced page, 013 sources list broken), DUP,
 CON (contradictions), SUP (supersession), STALE, SIZE, TERM (retired terms),
 SEC (secrets), PRIV (confidentiality flow), PROJ, DATE, LOG, IDX, EMPTY, INBOX,
+PACK (001 a pack rule's regex does not compile, so the rule never fires),
 and pack rules (TOG-, LEG-, CMP-, STU-). Silence a rule in `commonplace.toml`
 `[lint] disabled_rules`.
 

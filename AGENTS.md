@@ -1,0 +1,45 @@
+# commonplace — agent instructions (Rust code)
+
+## What this is
+A Rust CLI (`commonplace`) plus the Claude skill/plugin that ships it. `crates/commonplace-core`
+is the library (all logic); `crates/commonplace-cli` is the thin clap front end. `skills/`,
+`hooks/` and `fixtures/` are plugin content, not Rust. (`fixtures/demo/AGENTS.md` is a wiki's
+instruction file, not this one.)
+
+## Commands (run before declaring a task done)
+- Format: `cargo fmt --all`
+- Lint:   `cargo gate` (= clippy, all targets, warnings denied)
+- Test:   `cargo test --workspace` (the end-to-end tests lint a scratch copy of
+          `fixtures/demo`; CI also lints the fixture itself. Running `lint` on
+          `fixtures/demo` directly rewrites its manifest's `last_lint`: do it on a
+          copy, or discard that change before committing).
+- Docs:   `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
+
+Done = all four pass, no new `#[allow]` (except `dead_code` in `tests/common`, whose
+helpers are shared by several test binaries), every `#[expect]` has a `reason`.
+
+## Rules
+- Edition 2024, MSRV = `rust-version` in Cargo.toml (CI checks it). Add deps with `cargo add`.
+- Errors: core returns `commonplace_core::Error` (anyhow is not a core dependency). Agents
+  branch on its stable codes, so a new failure mode gets a kind with a code and a hint in
+  `error.rs` plus a row in `skills/commonplace/references/cli.md` (a test enforces this).
+  CLI commands raise core `Error` constructors; `bail!`/`anyhow!` are banned there by clippy.
+- No `unwrap`/`expect`/`panic!` outside tests; build regexes from literals with `crate::re`.
+  Sort floats with `total_cmp`.
+- Ownership: borrow by default. Every new `clone()`, `Arc`, `Box<dyn>` needs a reason.
+- No `unsafe` (forbidden in Cargo.toml).
+- Structure: logic lives in core; CLI command functions parse, call core, print. Items are
+  private or `pub(crate)` unless the CLI needs them. Functions under ~80 lines.
+- Output is a contract: the skill and hooks parse `--json` and the human output. Do not change
+  either without updating `skills/commonplace` and CHANGELOG.md.
+- Tests assert behaviour. Regressions get a test next to the fixed code; CLI behaviour gets
+  one in `crates/commonplace-cli/tests/` (helpers in `tests/common`, clock pinned with
+  `COMMONPLACE_NOW`).
+- Core public items need `///` docs (`# Errors` naming the error codes) and `Debug`; the
+  compiler enforces both. Name tuning constants and say why the value was chosen.
+
+## Workflow
+Plan first, then small diffs. For refactors, record CLI output on a copy of `fixtures/demo`
+before and after and diff it. To have format and clippy run after every edit, add
+`scripts/dev/rust-check-hook.sh` as a `PostToolUse` hook (matcher `Edit|Write`) in
+`.claude/settings.json`.

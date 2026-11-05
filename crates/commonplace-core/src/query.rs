@@ -1,15 +1,20 @@
-//! Dataview-like frontmatter queries:
-//!   type=capability and target_maturity>baseline_maturity
-//!   status!=archived or tags has topic/law
-//!   folder~projects/matter-x and not confidence=low
-//! Operators: = != > < >= <= ~ (substring, case-insensitive) has (list contains) exists
-//! Right-hand side: quoted string, number, or bare word. A bare word that names a
-//! field present on the page (or is written @field) compares two fields.
-//! Virtual fields: folder, path, stem, title, type, wordcount.
+//! Dataview-like frontmatter queries.
+//!
+//! ```text
+//! type=capability and target_maturity>baseline_maturity
+//! status!=archived or tags has topic/law
+//! folder~projects/matter-x and not confidence=low
+//! ```
+//!
+//! Operators: `=` `!=` `>` `<` `>=` `<=` `~` (substring, case-insensitive),
+//! `has` (list contains), `exists`. Right-hand side: quoted string, number, or
+//! bare word. A bare word that names a field present on the page (or is
+//! written `@field`) compares two fields. Virtual fields: `folder`, `path`,
+//! `stem`, `title`, `type`, `wordcount`.
 
 use crate::frontmatter;
 use crate::vault::Page;
-use anyhow::{anyhow, Result};
+use crate::{Error, Result};
 use serde_yaml::Value;
 
 #[derive(Debug, Clone)]
@@ -24,13 +29,14 @@ enum Tok {
     RParen,
 }
 
-fn lex(s: &str) -> Result<Vec<Tok>> {
+fn lex(input: &str) -> Result<Vec<Tok>> {
     let mut out = vec![];
-    let cs: Vec<char> = s.chars().collect();
+    let cs: Vec<char> = input.chars().collect();
     let mut i = 0;
     while i < cs.len() {
         let c = cs[i];
-        if c.is_whitespace() {
+        // backticks are markdown code marks (older help text showed them): skip
+        if c.is_whitespace() || c == '`' {
             i += 1;
             continue;
         }
@@ -45,17 +51,17 @@ fn lex(s: &str) -> Result<Vec<Tok>> {
             continue;
         }
         if c == '"' || c == '\'' {
-            let q = c;
+            let quote = c;
             let mut j = i + 1;
-            let mut v = String::new();
-            while j < cs.len() && cs[j] != q {
-                v.push(cs[j]);
+            let mut value = String::new();
+            while j < cs.len() && cs[j] != quote {
+                value.push(cs[j]);
                 j += 1;
             }
             if j >= cs.len() {
-                return Err(anyhow!("unterminated string in query"));
+                return Err(Error::invalid_query("unterminated string in query"));
             }
-            out.push(Tok::Str(v));
+            out.push(Tok::Str(value));
             i = j + 1;
             continue;
         }
@@ -73,36 +79,53 @@ fn lex(s: &str) -> Result<Vec<Tok>> {
             continue;
         }
         let mut j = i;
-        let mut w = String::new();
-        while j < cs.len() && !cs[j].is_whitespace() && !"()=!<>~\"'".contains(cs[j]) {
-            w.push(cs[j]);
+        let mut word = String::new();
+        while j < cs.len() && !cs[j].is_whitespace() && !"()=!<>~\"'`".contains(cs[j]) {
+            word.push(cs[j]);
             j += 1;
         }
         i = j;
-        match w.to_ascii_lowercase().as_str() {
+        match word.to_ascii_lowercase().as_str() {
             "and" => out.push(Tok::And),
             "or" => out.push(Tok::Or),
             "not" => out.push(Tok::Not),
-            "has" | "exists" => out.push(Tok::Op(w.to_ascii_lowercase())),
-            _ => out.push(Tok::Ident(w)),
+            "has" | "exists" => out.push(Tok::Op(word.to_ascii_lowercase())),
+            _ => out.push(Tok::Ident(word)),
         }
     }
     Ok(out)
 }
 
+/// A parsed `query --where` expression.
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Cmp { field: String, op: String, rhs: Rhs },
+    /// `field op rhs`, e.g. `status = seed`.
+    Cmp {
+        /// The field compared (see [`field_value`]).
+        field: String,
+        /// Operator: `=`, `!=`, `<`, `<=`, `>`, `>=`, `~` (contains), `has` or `exists`.
+        op: String,
+        /// What the field is compared with.
+        rhs: Rhs,
+    },
+    /// Both sides hold.
     And(Box<Expr>, Box<Expr>),
+    /// Either side holds.
     Or(Box<Expr>, Box<Expr>),
+    /// The inner expression does not hold.
     Not(Box<Expr>),
 }
 
+/// The right-hand side of a comparison.
 #[derive(Debug, Clone)]
 pub enum Rhs {
+    /// A quoted literal.
     Lit(String),
+    /// Another field's value, written `@field`.
     Field(String),
+    /// An unquoted word, compared as text.
     Bare(String),
+    /// No value: the `exists` operator.
     None,
 }
 
@@ -145,16 +168,21 @@ impl Parser {
                 let e = self.expr()?;
                 match self.next() {
                     Some(Tok::RParen) => Ok(e),
-                    _ => Err(anyhow!("expected )")),
+                    _ => Err(Error::invalid_query("expected )")),
                 }
             }
             Some(Tok::Ident(field)) => {
-                let op = match self.next() {
-                    Some(Tok::Op(o)) => o,
-                    _ => return Err(anyhow!("expected operator after '{field}'")),
+                let Some(Tok::Op(op)) = self.next() else {
+                    return Err(Error::invalid_query(format!(
+                        "expected operator after '{field}'"
+                    )));
                 };
                 if op == "exists" {
-                    return Ok(Expr::Cmp { field, op, rhs: Rhs::None });
+                    return Ok(Expr::Cmp {
+                        field,
+                        op,
+                        rhs: Rhs::None,
+                    });
                 }
                 let rhs = match self.next() {
                     Some(Tok::Str(s)) => Rhs::Lit(s),
@@ -165,28 +193,38 @@ impl Parser {
                             Rhs::Bare(w)
                         }
                     }
-                    _ => return Err(anyhow!("expected value after '{field} {op}'")),
+                    _ => {
+                        return Err(Error::invalid_query(format!(
+                            "expected value after '{field} {op}'"
+                        )));
+                    }
                 };
                 Ok(Expr::Cmp { field, op, rhs })
             }
-            other => Err(anyhow!("unexpected token {other:?}")),
+            other => Err(Error::invalid_query(format!("unexpected token {other:?}"))),
         }
     }
 }
 
+/// Parse a `--where` expression.
+///
+/// # Errors
+///
+/// `invalid_query` when the expression does not parse.
 pub fn parse(s: &str) -> Result<Expr> {
     let toks = lex(s)?;
     if toks.is_empty() {
-        return Err(anyhow!("empty query"));
+        return Err(Error::invalid_query("empty query"));
     }
     let mut p = Parser { toks, pos: 0 };
     let e = p.expr()?;
     if p.pos < p.toks.len() {
-        return Err(anyhow!("unexpected trailing tokens in query"));
+        return Err(Error::invalid_query("unexpected trailing tokens in query"));
     }
     Ok(e)
 }
 
+/// The value of `field` on `page`, including computed fields such as `type` and `path`.
 pub fn field_value(page: &Page, field: &str) -> Option<Value> {
     match field {
         "folder" => Some(Value::String(page.folder())),
@@ -194,7 +232,9 @@ pub fn field_value(page: &Page, field: &str) -> Option<Value> {
         "stem" | "name" => Some(Value::String(page.stem.clone())),
         "title" => Some(Value::String(page.title.clone())),
         "type" => Some(Value::String(page.ptype.clone())),
-        "wordcount" => Some(Value::Number(crate::markdown::word_count(&page.doc.body).into())),
+        "wordcount" => Some(Value::Number(
+            crate::markdown::word_count(&page.doc.body).into(),
+        )),
         _ => page.fm().get(field).cloned(),
     }
 }
@@ -204,12 +244,12 @@ fn scalar(v: &Value) -> String {
 }
 
 fn cmp_values(a: &str, op: &str, b: &str) -> bool {
+    use std::cmp::Ordering::{Equal, Greater, Less};
     let (na, nb) = (a.trim().parse::<f64>(), b.trim().parse::<f64>());
     let ord = match (na, nb) {
         (Ok(x), Ok(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
         _ => a.to_lowercase().cmp(&b.to_lowercase()),
     };
-    use std::cmp::Ordering::*;
     match op {
         "=" => ord == Equal,
         "!=" => ord != Equal,
@@ -222,6 +262,7 @@ fn cmp_values(a: &str, op: &str, b: &str) -> bool {
     }
 }
 
+/// Whether `page` satisfies `e`.
 pub fn eval(e: &Expr, page: &Page) -> bool {
     match e {
         Expr::And(a, b) => eval(a, page) && eval(b, page),
@@ -230,7 +271,7 @@ pub fn eval(e: &Expr, page: &Page) -> bool {
         Expr::Cmp { field, op, rhs } => {
             let lv = field_value(page, field);
             if op == "exists" {
-                return lv.map(|v| !v.is_null()).unwrap_or(false);
+                return lv.is_some_and(|v| !v.is_null());
             }
             let rv: Option<String> = match rhs {
                 Rhs::Lit(s) => Some(s.clone()),
@@ -245,10 +286,17 @@ pub fn eval(e: &Expr, page: &Page) -> bool {
             match (lv, op.as_str()) {
                 (None, "!=") => true,
                 (None, _) => false,
-                (Some(Value::Sequence(seq)), "has") => seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv) || scalar(x).to_lowercase().contains(&rv.to_lowercase())),
+                (Some(Value::Sequence(seq)), "has") => seq.iter().any(|x| {
+                    scalar(x).eq_ignore_ascii_case(&rv)
+                        || scalar(x).to_lowercase().contains(&rv.to_lowercase())
+                }),
                 (Some(v), "has") => scalar(&v).to_lowercase().contains(&rv.to_lowercase()),
-                (Some(Value::Sequence(seq)), "=") => seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv)),
-                (Some(Value::Sequence(seq)), "!=") => !seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv)),
+                (Some(Value::Sequence(seq)), "=") => {
+                    seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv))
+                }
+                (Some(Value::Sequence(seq)), "!=") => {
+                    !seq.iter().any(|x| scalar(x).eq_ignore_ascii_case(&rv))
+                }
                 (Some(v), op) => cmp_values(&scalar(&v), op, &rv),
             }
         }
@@ -258,12 +306,63 @@ pub fn eval(e: &Expr, page: &Page) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A compact rendering of the parse tree, with explicit grouping.
+    fn shape(e: &Expr) -> String {
+        match e {
+            Expr::Cmp { field, op, rhs } => {
+                let rhs = match rhs {
+                    Rhs::Lit(s) => format!(" '{s}'"),
+                    Rhs::Field(f) => format!(" @{f}"),
+                    Rhs::Bare(w) => format!(" {w}"),
+                    Rhs::None => String::new(),
+                };
+                format!("{field} {op}{rhs}")
+            }
+            Expr::And(a, b) => format!("({} AND {})", shape(a), shape(b)),
+            Expr::Or(a, b) => format!("({} OR {})", shape(a), shape(b)),
+            Expr::Not(a) => format!("NOT {}", shape(a)),
+        }
+    }
+
+    fn parsed(s: &str) -> String {
+        shape(&parse(s).unwrap())
+    }
+
     #[test]
-    fn parses() {
-        parse("type=capability and target_maturity>baseline_maturity").unwrap();
-        parse("status!=archived or tags has topic/law").unwrap();
-        parse("not (confidence=low) and folder~projects").unwrap();
-        parse("verified exists").unwrap();
-        assert!(parse("type=").is_err());
+    fn and_binds_tighter_than_or() {
+        assert_eq!(
+            parsed("type=capability or status!=archived and tags has topic/law"),
+            "(type = capability OR (status != archived AND tags has topic/law))"
+        );
+    }
+
+    #[test]
+    fn not_parentheses_and_value_kinds() {
+        assert_eq!(
+            parsed("not (confidence=low or x~\"two words\") and a>=@b"),
+            "(NOT (confidence = low OR x ~ 'two words') AND a >= @b)"
+        );
+        assert_eq!(parsed("verified exists"), "verified exists");
+        assert_eq!(parsed("a==b"), "a = b");
+    }
+
+    #[test]
+    fn backticks_are_ignored() {
+        assert_eq!(
+            parsed("`target_maturity>baseline_maturity`"),
+            "target_maturity > baseline_maturity"
+        );
+    }
+
+    #[test]
+    fn malformed_queries_are_errors() {
+        for bad in ["type=", "(a=b", "a b", "\"open", ""] {
+            assert_eq!(
+                parse(bad).map(|e| shape(&e)).map_err(|e| e.code()),
+                Err("invalid_query"),
+                "{bad}"
+            );
+        }
     }
 }

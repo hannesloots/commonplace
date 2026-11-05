@@ -1,0 +1,6 @@
+[alias]
+lint = "clippy --workspace --all-targets"
+# The CI gate, runnable locally: warnings are errors.
+gate = "clippy --workspace --all-targets --config build.warnings='deny'"
+
+# Warnings stay warnings locally; CI sets CARGO_BUILD_WARNINGS=deny.

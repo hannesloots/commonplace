@@ -1,30 +1,36 @@
-//! YAML frontmatter split/parse/serialise. The mapping keeps insertion order so
-//! rewriting a page does not reshuffle its properties.
+//! YAML frontmatter: split, parse and serialise.
+//!
+//! The mapping keeps insertion order so rewriting a page does not reshuffle
+//! its properties.
 
-use anyhow::{anyhow, Result};
+use crate::{Error, Result};
 use serde_yaml::{Mapping, Value};
 
 /// A parsed page: frontmatter mapping (may be empty) and body text.
 #[derive(Debug, Clone, Default)]
-pub struct Document {
-    pub fm: Mapping,
-    pub has_frontmatter: bool,
-    pub body: String,
+pub(crate) struct Document {
+    pub(crate) fm: Mapping,
+    pub(crate) has_frontmatter: bool,
+    pub(crate) body: String,
     /// Number of lines occupied by the frontmatter block (including fences), so
     /// body line numbers can be reported as file line numbers.
-    pub body_line_offset: usize,
+    pub(crate) body_line_offset: usize,
 }
 
-pub fn parse(text: &str) -> Result<Document> {
+pub(crate) fn parse(text: &str) -> Result<Document> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     if !(text.starts_with("---\n") || text.starts_with("---\r\n")) {
-        return Ok(Document { fm: Mapping::new(), has_frontmatter: false, body: text.to_string(), body_line_offset: 0 });
+        return Ok(Document {
+            fm: Mapping::new(),
+            has_frontmatter: false,
+            body: text.to_string(),
+            body_line_offset: 0,
+        });
     }
     // find closing fence on its own line
-    let mut offset = 0usize;
+    // the opening fence was checked above, so the first line is "---\n" or "---\r\n"
     let mut lines = text.split_inclusive('\n');
-    let first = lines.next().unwrap();
-    offset += first.len();
+    let mut offset = lines.next().map_or(0, str::len);
     let mut yaml = String::new();
     let mut closed = false;
     let mut fm_lines = 1usize;
@@ -39,21 +45,38 @@ pub fn parse(text: &str) -> Result<Document> {
         yaml.push_str(line);
     }
     if !closed {
-        return Err(anyhow!("frontmatter opened with --- but never closed"));
+        return Err(Error::frontmatter(
+            None,
+            "frontmatter opened with --- but never closed",
+        ));
     }
     let fm: Mapping = if yaml.trim().is_empty() {
         Mapping::new()
     } else {
-        match serde_yaml::from_str::<Value>(&yaml)? {
+        // A YAML syntax error is a `frontmatter` error (so the caller can
+        // attach the page with `in_file`), not an unlocated `parse` error.
+        let value = serde_yaml::from_str::<Value>(&yaml)
+            .map_err(|e| Error::frontmatter(None, format!("invalid YAML: {e}")))?;
+        match value {
             Value::Mapping(m) => m,
             Value::Null => Mapping::new(),
-            other => return Err(anyhow!("frontmatter is not a mapping: {:?}", other)),
+            other => {
+                return Err(Error::frontmatter(
+                    None,
+                    format!("frontmatter is not a mapping: {other:?}"),
+                ));
+            }
         }
     };
-    Ok(Document { fm, has_frontmatter: true, body: text[offset..].to_string(), body_line_offset: fm_lines })
+    Ok(Document {
+        fm,
+        has_frontmatter: true,
+        body: text[offset..].to_string(),
+        body_line_offset: fm_lines,
+    })
 }
 
-pub fn render(fm: &Mapping, body: &str) -> Result<String> {
+pub(crate) fn render(fm: &Mapping, body: &str) -> Result<String> {
     let mut out = String::from("---\n");
     if !fm.is_empty() {
         let y = serde_yaml::to_string(&Value::Mapping(fm.clone()))?;
@@ -67,7 +90,7 @@ pub fn render(fm: &Mapping, body: &str) -> Result<String> {
     Ok(out)
 }
 
-pub fn get_str(fm: &Mapping, key: &str) -> Option<String> {
+pub(crate) fn get_str(fm: &Mapping, key: &str) -> Option<String> {
     match fm.get(key)? {
         Value::String(s) => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
@@ -81,23 +104,32 @@ pub fn get_str(fm: &Mapping, key: &str) -> Option<String> {
     }
 }
 
+/// Render a YAML scalar as plain text (sequences joined with `, `).
 pub fn scalar_to_string(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Null => String::new(),
-        Value::Sequence(seq) => seq.iter().map(scalar_to_string).collect::<Vec<_>>().join(", "),
+        Value::Sequence(seq) => seq
+            .iter()
+            .map(scalar_to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
         Value::Mapping(_) => "{...}".to_string(),
         Value::Tagged(t) => scalar_to_string(&t.value),
     }
 }
 
 /// Return a list-valued field as strings. A scalar becomes a one-element list.
-pub fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
+pub(crate) fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
     match fm.get(key) {
         None | Some(Value::Null) => vec![],
-        Some(Value::Sequence(seq)) => seq.iter().map(scalar_to_string).filter(|s| !s.is_empty()).collect(),
+        Some(Value::Sequence(seq)) => seq
+            .iter()
+            .map(scalar_to_string)
+            .filter(|s| !s.is_empty())
+            .collect(),
         Some(v) => {
             let s = scalar_to_string(v);
             if s.is_empty() { vec![] } else { vec![s] }
@@ -105,23 +137,14 @@ pub fn get_list(fm: &Mapping, key: &str) -> Vec<String> {
     }
 }
 
-pub fn get_bool(fm: &Mapping, key: &str) -> Option<bool> {
-    match fm.get(key)? {
-        Value::Bool(b) => Some(*b),
-        Value::String(s) => match s.to_ascii_lowercase().as_str() {
-            "true" | "yes" => Some(true),
-            "false" | "no" => Some(false),
-            _ => None,
-        },
-        _ => None,
-    }
+pub(crate) fn set_str(fm: &mut Mapping, key: &str, val: &str) {
+    fm.insert(
+        Value::String(key.to_string()),
+        Value::String(val.to_string()),
+    );
 }
 
-pub fn set_str(fm: &mut Mapping, key: &str, val: &str) {
-    fm.insert(Value::String(key.to_string()), Value::String(val.to_string()));
-}
-
-pub fn set_value(fm: &mut Mapping, key: &str, val: Value) {
+pub(crate) fn set_value(fm: &mut Mapping, key: &str, val: Value) {
     fm.insert(Value::String(key.to_string()), val);
 }
 

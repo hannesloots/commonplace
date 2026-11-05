@@ -1,5 +1,57 @@
 # Changelog
 
+## Unreleased
+
+- Errors have stable codes. A failed command (exit 2) prints
+  `error[<code>]: <message>` and a `hint:` line on stderr; with `--json` it
+  prints `{"error": {"code", "message", "hint", "suggestions", "path"}}` on
+  stdout, so an agent can branch on the code. A missing page suggests the
+  closest titles. Command-line usage errors with `--json` use code `usage`.
+  The codes are listed in `references/cli.md`.
+- `review record` checks every page in scope before writing. Before, a page
+  with broken frontmatter stopped it after the review page and some stamps
+  were already written; the error now names the page. A missing findings
+  file is an `io` error that names the path.
+- An unreadable `.commonplace/manifest.json` made `lint` fail with exit 2
+  after checking, so the Stop hook (which blocks on exit 1) let it pass.
+  `lint` now reports it as `SRC-005` (error), skips the raw-file check that
+  would flag every source, and leaves the manifest untouched.
+- `lint --changed` (and the Stop hook that uses it) skipped changed files
+  whose names had non-ASCII characters (`Café.md`), because git escaped
+  them. It now reads git's NUL-separated output, which is never escaped.
+- `lint` reports a pack rule whose regex does not compile (`PACK-001`,
+  error, on the pack's `pack.yaml`). Before, such a rule silently never
+  fired. Pack regexes are now compiled once per run, not once per page.
+- `graph walk` / `graph path`: `--direction` accepts only `out`, `in` or
+  `both`; anything else is a `usage` error. Before, a typo silently meant
+  `both`.
+- `query --help` showed its field-comparison example in backticks
+  (`` `target_maturity>baseline_maturity` ``); typed as shown, the query
+  silently matched nothing. The help no longer shows backticks, and the
+  query parser now ignores them.
+- A YAML syntax error in a page's frontmatter is a `frontmatter` error that
+  names the page (`path`), not an unlocated `parse` error.
+- `lint --changed` (and `lint <paths>`) no longer hides findings on
+  non-markdown files such as `SRC-005` on the manifest or `PACK-001` on a
+  `pack.yaml`; and in a vault without git it no longer fails outright on an
+  unreadable manifest.
+- `COMMONPLACE_NOW` (`YYYY-MM-DD` or RFC 3339) pins the clock for every date
+  the tool writes or compares, for repeatable runs and evals.
+- `--root` at a folder without `commonplace.toml` now fails with `no_root`
+  instead of an I/O error.
+- `export` renumbered footnotes one label at a time, so a page that defined
+  `[^2]` before `[^1]` ended up with both references as `[^2]`. Footnotes
+  are now renumbered in one pass.
+- `doctor` printed the enabled packs as `Array [String("ea"), ...]`; it now
+  prints `["ea", "legal"]`, like `status`.
+- `cite find` no longer crashes on a line locator of 0.
+- `lint --changed` now includes files ending in upper-case `.MD`, as the
+  rest of the tool does.
+- Internal: Rust edition 2024; the workspace denies clippy pedantic and
+  `unwrap`/`expect`/`panic` lints; long functions split; CI checks
+  formatting, clippy, tests, docs, licences and advisories (cargo-deny) and
+  the minimum Rust version (1.88).
+
 ## 0.5.2 — 2026-11-03
 
 - First release from the published history: author and copyright are

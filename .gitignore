@@ -4,3 +4,5 @@
 /fixtures/tmp
 *.tmp~
 .DS_Store
+/.claude/worktrees
+/.claude/scheduled_tasks.lock

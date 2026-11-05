@@ -99,3 +99,59 @@ fn demo_vault_lints_clean() {
         String::from_utf8_lossy(&out.stdout)
     );
 }
+
+#[test]
+fn yaml_syntax_error_in_frontmatter_names_the_page() {
+    let root = demo_vault();
+    std::fs::write(
+        root.join("resources/concepts/Bad Yaml.md"),
+        "---\ntitle: [unclosed\ntype: concept\n---\n\nBody.\n",
+    )
+    .unwrap();
+    let findings = scratch_dir("review-yaml").join("findings.json");
+    std::fs::write(&findings, "[]").unwrap();
+    let out = run(
+        &root,
+        &[
+            "--json",
+            "review",
+            "record",
+            "skeptic",
+            findings.to_str().unwrap(),
+            "--scope",
+            "Customer Onboarding,Bad Yaml",
+        ],
+    );
+    let e = json_error(&out);
+    assert_eq!(out.status.code(), Some(2), "{e}");
+    assert_eq!(e["code"], "frontmatter", "{e}");
+    assert!(
+        e["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("Bad Yaml.md")),
+        "{e}"
+    );
+}
+
+#[test]
+fn lint_changed_without_git_survives_a_corrupt_manifest() {
+    let root = demo_vault();
+    std::fs::write(root.join(".commonplace/manifest.json"), "{ not json").unwrap();
+    let out = run(&root, &["--json", "lint", "--changed", "--no-cite"]);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["rule"] == "SRC-005"),
+        "{report}"
+    );
+}

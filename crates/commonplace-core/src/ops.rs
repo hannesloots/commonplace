@@ -147,9 +147,11 @@ pub fn changed_files(root: &Path) -> Result<HashSet<String>> {
         return Ok(set);
     }
     let mut set = HashSet::new();
-    let manifest = crate::manifest::Manifest::load(root)?;
-    let since = manifest
-        .last_lint
+    // An unreadable manifest means "no last lint": everything counts as changed,
+    // so the run goes on and lint reports the manifest itself (SRC-005).
+    let since = crate::manifest::Manifest::load(root)
+        .ok()
+        .and_then(|m| m.last_lint)
         .as_deref()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.with_timezone(&chrono::Local));

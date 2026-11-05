@@ -29,6 +29,12 @@
   (`` `target_maturity>baseline_maturity` ``); typed as shown, the query
   silently matched nothing. The help no longer shows backticks, and the
   query parser now ignores them.
+- A YAML syntax error in a page's frontmatter is a `frontmatter` error that
+  names the page (`path`), not an unlocated `parse` error.
+- `lint --changed` (and `lint <paths>`) no longer hides findings on
+  non-markdown files such as `SRC-005` on the manifest or `PACK-001` on a
+  `pack.yaml`; and in a vault without git it no longer fails outright on an
+  unreadable manifest.
 - `COMMONPLACE_NOW` (`YYYY-MM-DD` or RFC 3339) pins the clock for every date
   the tool writes or compares, for repeatable runs and evals.
 - `--root` at a folder without `commonplace.toml` now fails with `no_root`

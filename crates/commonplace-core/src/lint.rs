@@ -1482,8 +1482,11 @@ fn finish(vault: &Vault, opts: &LintOptions, all: Vec<Finding>) -> LintReport {
         findings.retain(|x| rules.iter().any(|r| x.rule.starts_with(r)));
     }
     if let Some(only) = &opts.only {
+        // Findings on non-markdown files (the manifest, a pack.yaml) concern the
+        // whole vault and can never be in a changed set, so they always pass.
         findings.retain(|x| {
-            only.contains(&x.path)
+            !crate::fsutil::is_markdown(std::path::Path::new(&x.path))
+                || only.contains(&x.path)
                 || only
                     .iter()
                     .any(|o| x.path.starts_with(o.trim_end_matches('/')))

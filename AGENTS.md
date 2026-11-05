@@ -9,11 +9,14 @@ instruction file, not this one.)
 ## Commands (run before declaring a task done)
 - Format: `cargo fmt --all`
 - Lint:   `cargo gate` (= clippy, all targets, warnings denied)
-- Test:   `cargo test --workspace` and
-          `cargo run -q -p commonplace-cli -- --root fixtures/demo lint --fail-on error`
+- Test:   `cargo test --workspace` (the end-to-end tests lint a scratch copy of
+          `fixtures/demo`; CI also lints the fixture itself. Running `lint` on
+          `fixtures/demo` directly rewrites its manifest's `last_lint`: do it on a
+          copy, or discard that change before committing).
 - Docs:   `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
 
-Done = all four pass, no new `#[allow]`, every `#[expect]` has a `reason`.
+Done = all four pass, no new `#[allow]` (except `dead_code` in `tests/common`, whose
+helpers are shared by several test binaries), every `#[expect]` has a `reason`.
 
 ## Rules
 - Edition 2024, MSRV = `rust-version` in Cargo.toml (CI checks it). Add deps with `cargo add`.

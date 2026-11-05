@@ -53,7 +53,11 @@ pub(crate) fn parse(text: &str) -> Result<Document> {
     let fm: Mapping = if yaml.trim().is_empty() {
         Mapping::new()
     } else {
-        match serde_yaml::from_str::<Value>(&yaml)? {
+        // A YAML syntax error is a `frontmatter` error (so the caller can
+        // attach the page with `in_file`), not an unlocated `parse` error.
+        let value = serde_yaml::from_str::<Value>(&yaml)
+            .map_err(|e| Error::frontmatter(None, format!("invalid YAML: {e}")))?;
+        match value {
             Value::Mapping(m) => m,
             Value::Null => Mapping::new(),
             other => {

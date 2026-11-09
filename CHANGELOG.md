@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-11-09
+
+- The plugin installs in GitHub Copilot CLI and OpenAI Codex as well as
+  Claude Code. A root `plugin.json` (Agent Plugins format) sits next to
+  `.claude-plugin/plugin.json`, and the shelf marketplace has a Codex list
+  (`.agents/plugins/marketplace.json`) that the release keeps in step.
+- `SKILL.md` tells agents that do not set `CLAUDE_SKILL_DIR` how to find the
+  launcher, and to use `scripts/commonplace.ps1` in Windows PowerShell.
+
 ## 0.6.0 — 2026-11-05
 
 - Errors have stable codes. A failed command (exit 2) prints

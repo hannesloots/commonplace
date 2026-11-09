@@ -90,7 +90,7 @@ jobs:
           # desktop bundle: all targets
           (cd skills && zip -qr ../out/commonplace-skill-desktop.zip commonplace)
           # plugin bundle: whole repo minus rust build
-          zip -qr out/commonplace-plugin.zip .claude-plugin skills bin hooks README.md LICENSE
+          zip -qr out/commonplace-plugin.zip plugin.json .claude-plugin skills bin hooks README.md LICENSE
           ls -la out
       - uses: softprops/action-gh-release@v2
         with:
@@ -133,8 +133,11 @@ jobs:
           (cd mkt/plugins/commonplace/skills/commonplace/bin && sha256sum -c --ignore-missing --strict "$GITHUB_WORKSPACE/rel/SHA256SUMS")
           test -n "$(ls mkt/plugins/commonplace/skills/commonplace/bin/commonplace-* 2>/dev/null)" || { echo "no binaries in the plugin"; exit 1; }
           VERSION="${TAG#v}"
-          jq --arg v "$VERSION" '(.plugins[] | select(.name == "commonplace") | .version) = $v' mkt/.claude-plugin/marketplace.json > mkt/.claude-plugin/marketplace.json.new
-          mv mkt/.claude-plugin/marketplace.json.new mkt/.claude-plugin/marketplace.json
+          # Claude Code and Copilot CLI read .claude-plugin/; Codex reads .agents/plugins/
+          for m in mkt/.claude-plugin/marketplace.json mkt/.agents/plugins/marketplace.json; do
+            jq --arg v "$VERSION" '(.plugins[] | select(.name == "commonplace") | .version) = $v' "$m" > "$m.new"
+            mv "$m.new" "$m"
+          done
           cd mkt
           git config user.name "commonplace release"
           git config user.email "release@users.noreply.github.com"

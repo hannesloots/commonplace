@@ -30,6 +30,11 @@ COMMONPLACE="${CLAUDE_SKILL_DIR:-<this skill dir>}/scripts/commonplace"   # laun
 $COMMONPLACE doctor                                                   # root, converters, packs
 ```
 
+`<this skill dir>` is the folder that holds this `SKILL.md`; use its absolute path
+when your agent does not set `CLAUDE_SKILL_DIR`. In Windows PowerShell (no `sh`),
+run `& "<this skill dir>\scripts\commonplace.ps1" doctor` instead; every
+`$COMMONPLACE` command below works the same way through it.
+
 If `doctor` finds no root, ask where the commonplace should live (default `~/commonplace`)
 and run `$COMMONPLACE init <path> --name "<Name>" --purpose "<one sentence>"
 [--pack ea,legal,compare,study] [--jurisdiction za|au|en]`, then `git init` inside it. If the binary

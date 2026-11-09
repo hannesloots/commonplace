@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "commonplace",
+  "version": "0.6.1",
+  "description": "Cited markdown research wiki and second brain maintained by your coding agent: immutable sources, page-anchored text layers, verbatim-quote citations verified by a Rust tool, PARA organisation, persona reviews, packs for TOGAF, SA legal, comparisons and study.",
+  "author": { "name": "Commonplace contributors" },
+  "homepage": "https://github.com/hannesloots/commonplace",
+  "repository": "https://github.com/hannesloots/commonplace",
+  "license": "MIT",
+  "keywords": ["wiki", "second-brain", "research", "citations", "obsidian", "enterprise-architecture", "legal", "pkm"]
+}

@@ -1,0 +1,36 @@
+{
+  // Dev environment: Rust toolchain + Claude Code, isolated from the host.
+  // Sees only this repo.
+  "name": "commonplace",
+  "build": { "dockerfile": "Containerfile" },
+  // Rootless, host uid -> vscode (1000), no capabilities, no privilege
+  // escalation. SELinux separation stays on via the podman wrapper
+  // (~/.local/bin/podman-devcontainer as dev.containers.dockerPath).
+  "runArgs": [
+    "--userns=keep-id",
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges"
+  ],
+  "containerUser": "vscode",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": false,
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/commonplace,type=bind,Z",
+  "workspaceFolder": "/workspaces/commonplace",
+  // Claude's login/settings and the cargo registry persist in named volumes,
+  // separate from the host's ~/.claude.
+  "mounts": [
+    "source=commonplace-claude,target=/home/vscode/.claude,type=volume",
+    "source=commonplace-cargo,target=/home/vscode/.cargo,type=volume"
+  ],
+  "containerEnv": {
+    "HOME": "/home/vscode",
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "CARGO_HOME": "/home/vscode/.cargo"
+  },
+  "postCreateCommand": "cargo fetch",
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "anthropic.claude-code"]
+    }
+  }
+}

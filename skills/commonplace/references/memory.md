@@ -57,10 +57,14 @@ A playbook is a procedure that worked, written so it can be followed next time:
 trigger, preconditions, steps, checks, pitfalls. Sources of playbooks: a course
 module (study pack), a project retrospective, a recurring request, a mistake
 in the error book. Update `times_used`/`last_used` when applied; retire
-playbooks that stop working with `status: superseded`. Playbooks are the
-"skill layer": they make you more capable in this user's world, and they make
-the user more capable because the procedure is written in their terms with
-their sources.
+playbooks that stop working with `status: superseded`. Playbooks make you
+more capable in this user's world, and they make the user more capable because
+the procedure is written in their terms with their sources.
+
+A playbook is wiki: you read it, it cites and links. When an agent should
+follow a procedure on its own, without being pointed at the page, compile it
+into a skill (`skills/<name>/`), which links back to the playbook in its
+`PURPOSE.md`. See [skills.md](skills.md).
 
 ## Interplay with Claude Code's own memory
 

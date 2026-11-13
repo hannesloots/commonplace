@@ -68,13 +68,14 @@ pub struct Graph {
 const NON_RELATION_FIELDS: &[&str] = &["aliases", "tags"];
 
 /// Page types that are navigation or bookkeeping, not graph nodes.
-const NON_NODE_TYPES: [&str; 6] = [
+const NON_NODE_TYPES: [&str; 7] = [
     "index",
     "log",
     "registry",
     "questions",
     "error-book",
     "review",
+    "skill-impact",
 ];
 
 /// The node for a page, or `None` for unparseable and navigation pages.

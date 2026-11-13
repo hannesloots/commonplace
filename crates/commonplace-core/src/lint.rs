@@ -190,8 +190,9 @@ pub(crate) fn core_type(t: &str) -> Option<TypeRules> {
             false,
         ),
         "review" => base(&["persona", "date", "scope"], &[], false),
+        "skill" => base(&["title"], &[], false),
         "index" | "log" | "registry" | "overview" | "questions" | "error-book" | "profile"
-        | "preferences" | "glossary" | "moc" => base(&[], &[], false),
+        | "preferences" | "glossary" | "moc" | "skill-impact" => base(&[], &[], false),
         _ => None,
     }
 }
@@ -762,8 +763,9 @@ impl<'c, 'a> PageCheck<'c, 'a> {
 
     /// SEC-001, TERM-001, SIZE-001, EMPTY-001, STALE-001/002 and PROJ-001.
     fn check_body(&mut self, cited: bool) {
-        const NO_SIZE_LIMIT: [&str; 8] = [
+        const NO_SIZE_LIMIT: [&str; 9] = [
             "source",
+            "skill-impact",
             "journal",
             "log",
             "index",
@@ -1520,6 +1522,7 @@ pub fn lint(vault: &Vault, packs: &[Pack], opts: &LintOptions) -> LintReport {
     check_unregistered_raw(vault, &mut findings);
     check_inbox(vault, &mut findings);
     check_index_freshness(vault, &mut findings);
+    crate::skill::lint(vault, &mut findings);
     finish(vault, opts, findings)
 }
 

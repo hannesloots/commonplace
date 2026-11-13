@@ -40,6 +40,7 @@ pub struct Config {
     pub(crate) privacy: PrivacyConfig,
     /// Persona review settings.
     pub review: ReviewConfig,
+    pub(crate) skills: SkillsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +90,18 @@ pub struct ReviewConfig {
     pub context_lines: usize,
 }
 
+/// Where accepted skills are installed (`[skills]`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct SkillsConfig {
+    /// Skill folders agents read, relative to the commonplace root and, for
+    /// `user` skills, to the home folder: Claude Code reads `.claude/skills`,
+    /// Codex, Copilot CLI and other Agent Skills hosts read `.agents/skills`.
+    pub(crate) targets: Vec<String>,
+    /// Skills also installed under the home folder, for every project.
+    pub(crate) user: Vec<String>,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -102,6 +115,7 @@ impl Default for Config {
             converters: ConvertersConfig::default(),
             privacy: PrivacyConfig::default(),
             review: ReviewConfig::default(),
+            skills: SkillsConfig::default(),
         }
     }
 }
@@ -142,6 +156,14 @@ impl Default for PrivacyConfig {
     fn default() -> Self {
         Self {
             exclude_from_export: vec!["privileged".into(), "confidential".into()],
+        }
+    }
+}
+impl Default for SkillsConfig {
+    fn default() -> Self {
+        Self {
+            targets: vec![".claude/skills".into(), ".agents/skills".into()],
+            user: vec![],
         }
     }
 }

@@ -33,6 +33,8 @@ enum Kind {
     },
     #[error("unknown source id '{id}'")]
     SourceNotFound { id: String },
+    #[error("no skill named '{name}'")]
+    SkillNotFound { name: String },
     #[error("{message}")]
     TextLayerMissing { message: String },
     #[error("{what} already exists")]
@@ -91,6 +93,11 @@ impl Error {
     /// No source is registered under `id`.
     pub fn source_not_found(id: impl Into<String>) -> Self {
         Self::new(Kind::SourceNotFound { id: id.into() })
+    }
+
+    /// No skill folder `skills/<name>/` (or accepted copy) exists.
+    pub fn skill_not_found(name: impl Into<String>) -> Self {
+        Self::new(Kind::SkillNotFound { name: name.into() })
     }
 
     /// A source has no text layer (or the requested span is not in it).
@@ -184,6 +191,7 @@ impl Error {
         match &self.kind {
             Kind::PageNotFound { .. } => "page_not_found",
             Kind::SourceNotFound { .. } => "source_not_found",
+            Kind::SkillNotFound { .. } => "skill_not_found",
             Kind::TextLayerMissing { .. } => "text_layer_missing",
             Kind::AlreadyExists { .. } => "already_exists",
             Kind::NoRoot { .. } => "no_root",
@@ -204,6 +212,10 @@ impl Error {
                 None => "find the title with `commonplace search <words>`".into(),
             }),
             Kind::SourceNotFound { .. } => Some("list ids with `commonplace source list`".into()),
+            Kind::SkillNotFound { .. } => Some(
+                "list skills with `commonplace skill list`, or create one with `commonplace skill new`"
+                    .into(),
+            ),
             Kind::TextLayerMissing { .. } => Some(
                 "convert the original, then register it with `commonplace source attach-text`"
                     .into(),
@@ -249,11 +261,14 @@ impl Error {
         }
     }
 
-    /// True for `page_not_found`, `source_not_found` and `text_layer_missing`.
+    /// True for `page_not_found`, `source_not_found`, `skill_not_found` and `text_layer_missing`.
     pub fn is_not_found(&self) -> bool {
         matches!(
             self.kind,
-            Kind::PageNotFound { .. } | Kind::SourceNotFound { .. } | Kind::TextLayerMissing { .. }
+            Kind::PageNotFound { .. }
+                | Kind::SourceNotFound { .. }
+                | Kind::SkillNotFound { .. }
+                | Kind::TextLayerMissing { .. }
         )
     }
 
@@ -267,6 +282,7 @@ impl Error {
     pub const CODES: &'static [&'static str] = &[
         "page_not_found",
         "source_not_found",
+        "skill_not_found",
         "text_layer_missing",
         "already_exists",
         "no_root",
@@ -339,6 +355,7 @@ mod tests {
         vec![
             Error::page_not_found("x", vec![]),
             Error::source_not_found("x"),
+            Error::skill_not_found("x"),
             Error::text_layer_missing("x"),
             Error::already_exists("x"),
             Error::no_root(Path::new("/x")),

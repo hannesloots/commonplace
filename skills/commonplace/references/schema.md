@@ -21,7 +21,7 @@ and upgrade older commonplaces. When they differ, the commonplace's AGENTS.md wi
 ```
 commonplace/
 ├── AGENTS.md  CLAUDE.md  commonplace.toml  TAGS.md
-├── index.md (generated)  overview.md  log.md  error-book.md  open-questions.md
+├── index.md (generated)  overview.md  log.md  error-book.md  open-questions.md  skill-impact.md
 ├── inbox/  journal/  questions/  reviews/  indexes/ (generated)
 ├── sources/raw/   <id>.<ext>            immutable originals, sha256 in .commonplace/manifest.json
 ├── sources/text/  <id>.text.md | <id>/  faithful markdown, anchors, never edited
@@ -31,7 +31,9 @@ commonplace/
 ├── resources/{concepts,entities,topics,syntheses,playbooks}/   PARA: resource
 ├── memory/ Profile.md Preferences.md Glossary.md people/ decisions/
 ├── archive/                             PARA: archive
-└── .commonplace/ manifest.json templates/ packs/
+├── skills/<name>/ SKILL.md PURPOSE.md   agent skills compiled from the wiki (references/skills.md)
+├── .claude/skills/  .agents/skills/     installed copies of accepted skills (tool-written)
+└── .commonplace/ manifest.json templates/ packs/ skills/ (accepted versions)
 ```
 
 Why sources are global: one judgment, brochure or standard serves many
@@ -66,6 +68,13 @@ decision, and any pack type with `cited: true`) also need `tags`, `status`,
 | capture | created, status(new/processed) | fleeting; delete or file within days |
 | question | status(open/answered/parked) | what would resolve it |
 | review | persona, date, scope | written by `commonplace review record` |
+| skill | title | `skills/<name>/PURPOSE.md`: the skill's page, linking the wiki pages behind it |
+| skill-impact | — | `skill-impact.md`, written by `commonplace skill accept/reject/used` |
+
+`skills/<name>/PURPOSE.md` is the skill's page: `type: skill`, named after the
+skill (`[[weekly-review]]`), listed under Skills in the index, a node in the graph.
+`SKILL.md` is not a page: it has Agent Skills frontmatter (`name`,
+`description`) and is checked by the SKILL-00x lint rules instead.
 
 `description` is the index line (L0): one claim-style sentence written for
 someone deciding whether to open the page. `aliases` carry other names so

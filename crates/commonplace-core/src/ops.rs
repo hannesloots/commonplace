@@ -189,11 +189,18 @@ fn title_regex_error(e: &regex::Error) -> Error {
 ///
 /// # Errors
 ///
-/// `page_not_found` for an unknown page, `already_exists` when the new title is taken, `io` on write failure.
+/// `page_not_found` for an unknown page, `invalid_input` for a skill's page,
+/// `already_exists` when the new title is taken, `io` on write failure.
 pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport> {
     let page = vault
         .resolve_page(old)
         .ok_or_else(|| vault.page_not_found(old))?;
+    if page.ptype == "skill" {
+        return Err(Error::invalid_input(format!(
+            "'{}' is a skill, named by its folder: create the new one with `commonplace skill new`, then retire this one",
+            page.stem
+        )));
+    }
     let new_title = fsutil::safe_title(new_title);
     if vault.resolve_page(&new_title).is_some() {
         return Err(Error::already_exists(format!("a page named '{new_title}'")));
@@ -206,6 +213,14 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
         regex::escape(&old_stem)
     ))
     .map_err(|e| title_regex_error(&e))?;
+    let rewrite = |text: &str| {
+        re.replace_all(text, |c: &regex::Captures<'_>| {
+            let h = c.get(1).map_or("", |m| m.as_str());
+            let a = c.get(2).map_or("", |m| m.as_str());
+            format!("[[{new_title}{h}{a}]]")
+        })
+        .into_owned()
+    };
     let mut files_updated = vec![];
     let mut links = 0;
     for p in &vault.pages {
@@ -214,14 +229,17 @@ pub fn rename(vault: &Vault, old: &str, new_title: &str) -> Result<RenameReport>
         if n == 0 {
             continue;
         }
-        let out = re.replace_all(&text, |c: &regex::Captures<'_>| {
-            let h = c.get(1).map_or("", |m| m.as_str());
-            let a = c.get(2).map_or("", |m| m.as_str());
-            format!("[[{new_title}{h}{a}]]")
-        });
-        fsutil::write_atomic(&p.path, out.as_bytes())?;
+        fsutil::write_atomic(&p.path, rewrite(&text).as_bytes())?;
         links += n;
         files_updated.push(p.rel.clone());
+        // a skill's accepted PURPOSE.md gets the same rewrite, so a rename is
+        // not mistaken for a proposal waiting at the gate
+        if let Some(skill) = crate::skill::purpose_owner(&p.rel) {
+            let accepted = crate::skill::accepted_purpose(&vault.root, skill);
+            if let Ok(old_text) = std::fs::read_to_string(&accepted) {
+                fsutil::write_atomic(&accepted, rewrite(&old_text).as_bytes())?;
+            }
+        }
     }
     // update the page itself: title, alias, h1
     let text = std::fs::read_to_string(&page.path)?;

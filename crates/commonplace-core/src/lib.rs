@@ -21,6 +21,7 @@ pub mod pack;
 pub mod query;
 pub mod scaffold;
 pub mod search;
+pub mod skill;
 pub mod sources;
 pub mod vault;
 

@@ -10,7 +10,7 @@ mod cmd;
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Cmd};
-use cmd::{Ctx, check, find, graph, pages, review, setup, source};
+use cmd::{Ctx, check, find, graph, pages, review, setup, skill, source};
 use serde::Serialize;
 
 fn main() {
@@ -139,5 +139,6 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Trace(a) => find::trace(&ctx, a),
         Cmd::Review { cmd } => review::review(&ctx, cmd),
         Cmd::Graph { cmd } => graph::graph(&ctx, cmd),
+        Cmd::Skill { cmd } => skill::skill(&ctx, cmd),
     }
 }

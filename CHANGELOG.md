@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- Skills layer, after Google's WikiSkill paper: raw sources and use records,
+  the wiki that distils them (playbooks, error book), and agent skills
+  compiled from the wiki. A skill is `skills/<name>/SKILL.md` (an Agent
+  Skill, self-contained) plus `PURPOSE.md` (links to the wiki pages behind
+  it). New commands `commonplace skill new | list | diff | accept | reject |
+  used | sync`. An edit is a proposal until `accept`. Accept and reject
+  both append the diff, reason and evidence to `skill-impact.md`, which is
+  never rolled back. Only accepted versions are kept (in
+  `.commonplace/skills/`) and installed (`.claude/skills`, `.agents/skills`,
+  configurable under `[skills]`; `sync --user` installs under the home
+  folder). Installs never overwrite a skill folder commonplace did not write.
+- New error code `skill_not_found`. New lint rules `SKILL-001`, `SKILL-002`
+  and `SKILL-004` to `SKILL-007` (see `references/cli.md`).
+- A skill's `PURPOSE.md` is its wiki page (`type: skill`, named after the
+  skill): it appears in backlinks, the graph and a Skills group in the index,
+  its broken links are `LINK-001`, and `rename` rewrites its links in both the
+  source and the accepted copy, so a rename never shows up as a proposal.
+- `init` creates `skills/` and `skill-impact.md`; `init --force` adds the
+  Skills operation to AGENTS.md. Page discovery skips `.claude/`, `.agents/`
+  and everything under `skills/` except `PURPOSE.md`, so `SKILL.md` files and
+  installed copies are not treated as wiki pages.
+- Development: a devcontainer (`.devcontainer/`, Rust toolchain, musl
+  target, Claude Code; rootless Podman, no capabilities).
+- The skill's references: new `references/skills.md`, with the loop
+  (record use → distil into the wiki → propose one change → user accepts or
+  rejects).
+
 ## 0.6.1 — 2026-11-09
 
 - The plugin installs in GitHub Copilot CLI and OpenAI Codex as well as

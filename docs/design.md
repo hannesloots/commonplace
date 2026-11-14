@@ -72,7 +72,7 @@ works without the skill (AGENTS.md is complete) and without the binary
   macOS binaries come from CI; not yet exercised).
 - Verify the Stop hook's input schema (`stop_hook_active`) against current docs
   before relying on the loop guard.
-- Run the eval cases under `skills/commonplace/evals` after each change to SKILL.md.
+- Run the eval cases under `evals/` after each change to SKILL.md: `claude plugin eval . --allow-tools Bash Write Edit` (it refuses an eval folder inside `skills/`).
 - Pilot each pack on a real but low-risk case; turn recurring mistakes into
   lint rules.
 - OKF export command (`commonplace export --format okf`) is specified but not built.

@@ -21,8 +21,15 @@
   source and the accepted copy, so a rename never shows up as a proposal.
 - `init` creates `skills/` and `skill-impact.md`; `init --force` adds the
   Skills operation to AGENTS.md. Page discovery skips `.claude/`, `.agents/`
-  and everything under `skills/` except `PURPOSE.md`, so `SKILL.md` files and
-  installed copies are not treated as wiki pages.
+  and, inside skill folders (those with a `SKILL.md` or an accepted copy),
+  everything but `PURPOSE.md`. Other folders under `skills/` stay ordinary
+  notes.
+- `skill accept` refuses a `SKILL.md` agents cannot load (the SKILL-001
+  checks) and an install folder holding a skill commonplace did not write,
+  before anything is recorded. Every `skill` command rejects a name that is
+  not a valid skill name, so a name can never reach outside `skills/`.
+  `skill new` refuses a name an existing page already has. Reasons, notes
+  and descriptions are kept on one line.
 - Development: a devcontainer (`.devcontainer/`, Rust toolchain, musl
   target, Claude Code; rootless Podman, no capabilities).
 - The skill's references: new `references/skills.md`, with the loop

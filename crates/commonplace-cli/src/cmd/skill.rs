@@ -31,8 +31,8 @@ pub(crate) fn skill(ctx: &Ctx, cmd: SkillCmd) -> Result<i32> {
 }
 
 fn new(ctx: &Ctx, name: &str, description: &str) -> Result<i32> {
-    let root = ctx.find_root()?;
-    let path = skill::new_skill(&root, name, description)?;
+    let v = ctx.open()?;
+    let path = skill::new_skill(&v, name, description)?;
     if ctx.json {
         print_json(&serde_json::json!({ "name": name, "path": path }))?;
     } else {

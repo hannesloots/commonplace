@@ -150,14 +150,6 @@ fn name_problem(name: &str) -> Option<String> {
     })
 }
 
-/// The skill whose `PURPOSE.md` is at vault-relative `rel`
-/// (`skills/<name>/PURPOSE.md`). That file is the skill's wiki page.
-pub(crate) fn purpose_owner(rel: &str) -> Option<&str> {
-    let rest = rel.strip_prefix(SKILLS_DIR)?.strip_prefix('/')?;
-    let (name, file) = rest.split_once('/')?;
-    (file == PURPOSE_FILE && !name.is_empty()).then_some(name)
-}
-
 /// `description` from the `SKILL.md` next to the `PURPOSE.md` at `purpose`.
 pub(crate) fn description_beside(purpose: &Path) -> Option<String> {
     let text = read_text(&purpose.with_file_name(SKILL_FILE))?;
@@ -201,11 +193,61 @@ fn subdirs(dir: &Path) -> Vec<String> {
     v
 }
 
-/// Every skill name with a source folder or an accepted copy.
+/// Whether `skills/<name>/` is a skill: it has a `SKILL.md` or an accepted
+/// copy. Any other folder under `skills/` (notes on skills one is learning,
+/// say) holds ordinary wiki pages.
+fn is_skill_folder(root: &Path, name: &str) -> bool {
+    source_dir(root, name).join(SKILL_FILE).is_file() || accepted_dir(root, name).is_dir()
+}
+
+/// For a vault-relative path inside a skill folder: the skill's name, and
+/// whether the file is its `PURPOSE.md` (the skill's wiki page). `None` for
+/// every other path, including notes in folders under `skills/` that are not skills.
+pub(crate) fn skill_file<'a>(root: &Path, rel: &'a str) -> Option<(&'a str, bool)> {
+    let rest = rel.strip_prefix(SKILLS_DIR)?.strip_prefix('/')?;
+    let (name, file) = rest.split_once('/')?;
+    is_skill_folder(root, name).then_some((name, file == PURPOSE_FILE))
+}
+
+/// Every skill name: skill folders under `skills/` and accepted copies.
 fn names(root: &Path) -> Vec<String> {
-    let mut all: BTreeSet<String> = subdirs(&root.join(SKILLS_DIR)).into_iter().collect();
+    let mut all: BTreeSet<String> = subdirs(&root.join(SKILLS_DIR))
+        .into_iter()
+        .filter(|n| is_skill_folder(root, n))
+        .collect();
     all.extend(subdirs(&crate::vault::tool_dir(root).join("skills")));
     all.into_iter().collect()
+}
+
+/// A skill's source and accepted files, read once (`None`: no such folder).
+struct Snapshot {
+    source: Option<Files>,
+    accepted: Option<Files>,
+}
+
+impl Snapshot {
+    fn read(root: &Path, name: &str) -> Result<Self> {
+        let read = |dir: PathBuf| -> Result<Option<Files>> {
+            if dir.is_dir() {
+                read_files(&dir).map(Some)
+            } else {
+                Ok(None)
+            }
+        };
+        Ok(Self {
+            source: read(source_dir(root, name))?,
+            accepted: read(accepted_dir(root, name))?,
+        })
+    }
+
+    fn state(&self) -> SkillState {
+        match (&self.source, &self.accepted) {
+            (Some(_), None) => SkillState::New,
+            (None, Some(_)) => SkillState::Removed,
+            (s, a) if s == a => SkillState::Accepted,
+            _ => SkillState::Changed,
+        }
+    }
 }
 
 /// Every file under `dir` except the install marker; empty when `dir` does not exist.
@@ -248,23 +290,24 @@ fn write_files(dir: &Path, files: &Files, for_agents: bool) -> Result<()> {
     Ok(())
 }
 
-fn state_of(root: &Path, name: &str) -> Result<SkillState> {
-    let (src, acc) = (source_dir(root, name), accepted_dir(root, name));
-    Ok(match (src.is_dir(), acc.is_dir()) {
-        (true, false) => SkillState::New,
-        (false, true) => SkillState::Removed,
-        _ if read_files(&src)? == read_files(&acc)? => SkillState::Accepted,
-        _ => SkillState::Changed,
-    })
-}
-
-/// Fail with `skill_not_found` unless `name` has a source or an accepted copy.
+/// Fail with `invalid_input` for a name that is not a valid skill name (so
+/// `..` or `a/b` never reach a path), else with `skill_not_found` unless
+/// `name` has a source or an accepted copy.
 fn require_known(root: &Path, name: &str) -> Result<()> {
+    if let Some(problem) = name_problem(name) {
+        return Err(Error::invalid_input(problem));
+    }
     if source_dir(root, name).is_dir() || accepted_dir(root, name).is_dir() {
         Ok(())
     } else {
         Err(Error::skill_not_found(name))
     }
+}
+
+/// `s` on one line: a newline in a note or reason would otherwise start a
+/// forged `## [date] used | name` entry in the impact record.
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn read_text(path: &Path) -> Option<String> {
@@ -289,12 +332,20 @@ fn purpose_links(dir: &Path) -> Vec<(String, usize)> {
 /// # Errors
 ///
 /// `invalid_input` for a bad name or an empty or overlong description;
-/// `already_exists` when the folder exists; `io` on write failure.
-pub fn new_skill(root: &Path, name: &str, description: &str) -> Result<String> {
+/// `already_exists` when the folder exists or a page already has the name
+/// (the skill's page is named after it); `io` on write failure.
+pub fn new_skill(vault: &Vault, name: &str, description: &str) -> Result<String> {
+    let root = &vault.root;
     if let Some(problem) = name_problem(name) {
         return Err(Error::invalid_input(problem));
     }
-    let description = description.trim();
+    if let Some(page) = vault.resolve_page(name) {
+        return Err(Error::already_exists_with(
+            format!("a page named '{name}' ({})", page.rel),
+            "the skill's page would share its name and make [[links]] ambiguous; choose another skill name",
+        ));
+    }
+    let description = one_line(description);
     if description.is_empty() || description.chars().count() > MAX_DESCRIPTION_CHARS {
         return Err(Error::invalid_input(format!(
             "give a --description of 1-{MAX_DESCRIPTION_CHARS} characters saying what the skill does and when to use it"
@@ -310,7 +361,7 @@ pub fn new_skill(root: &Path, name: &str, description: &str) -> Result<String> {
     let title = title_of(name);
     let mut doc = frontmatter::parse(SKILL_TEMPLATE)?;
     frontmatter::set_str(&mut doc.fm, "name", name);
-    frontmatter::set_str(&mut doc.fm, "description", description);
+    frontmatter::set_str(&mut doc.fm, "description", &description);
     let skill = frontmatter::render(&doc.fm, &doc.body.replace("{{title}}", &title))?;
     fsutil::write_atomic(&dir.join(SKILL_FILE), skill.as_bytes())?;
     let purpose = PURPOSE_TEMPLATE
@@ -365,18 +416,26 @@ pub fn list(root: &Path) -> Result<Vec<Skill>> {
     let mut used = usage(root);
     let mut out = vec![];
     for name in names(root) {
-        let state = state_of(root, &name)?;
-        let dir = match state {
-            SkillState::Removed => accepted_dir(root, &name),
-            _ => source_dir(root, &name),
-        };
-        let description = read_text(&dir.join(SKILL_FILE))
-            .and_then(|t| frontmatter::parse(&t).ok())
+        let snap = Snapshot::read(root, &name)?;
+        let state = snap.state();
+        // the source, or the accepted copy of a skill whose folder was deleted
+        let files = snap.source.or(snap.accepted).unwrap_or_default();
+        let text = |f: &str| files.get(f).and_then(|b| std::str::from_utf8(b).ok());
+        let description = text(SKILL_FILE)
+            .and_then(|t| frontmatter::parse(t).ok())
             .and_then(|d| frontmatter::get_str(&d.fm, "description"))
+            .unwrap_or_default();
+        let purpose = text(PURPOSE_FILE)
+            .map(|t| {
+                markdown::wikilinks(t)
+                    .into_iter()
+                    .map(|l| l.target)
+                    .collect()
+            })
             .unwrap_or_default();
         let u = used.remove(&name).unwrap_or_default();
         out.push(Skill {
-            purpose: purpose_links(&dir).into_iter().map(|(t, _)| t).collect(),
+            purpose,
             name,
             description,
             state,
@@ -422,9 +481,10 @@ fn diff_files(old: &Files, new: &Files) -> String {
 /// `skill_not_found` for an unknown skill; `io` when a folder cannot be read.
 pub fn diff(root: &Path, name: &str) -> Result<String> {
     require_known(root, name)?;
+    let snap = Snapshot::read(root, name)?;
     Ok(diff_files(
-        &read_files(&accepted_dir(root, name))?,
-        &read_files(&source_dir(root, name))?,
+        &snap.accepted.unwrap_or_default(),
+        &snap.source.unwrap_or_default(),
     ))
 }
 
@@ -442,28 +502,18 @@ fn append_impact(
     bullets: &[String],
     diff: Option<&str>,
 ) -> Result<()> {
-    let p = root.join(IMPACT_FILE);
-    let mut text = match std::fs::read_to_string(&p) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => IMPACT_TEMPLATE.to_string(),
-        Err(e) => return Err(Error::io("reading", &p, e)),
-    };
-    if !text.ends_with('\n') {
-        text.push('\n');
-    }
-    let _ = write!(text, "\n## [{}] {op} | {name}\n", fsutil::today());
-    for b in bullets {
-        let _ = writeln!(text, "- {b}");
-    }
-    if let Some(d) = diff {
+    let block = diff.map(|d| {
         let fence = fence_for(d);
-        let _ = write!(text, "\n{fence}diff\n{d}");
-        if !d.ends_with('\n') {
-            text.push('\n');
-        }
-        let _ = writeln!(text, "{fence}");
-    }
-    fsutil::write_atomic(&p, text.as_bytes())
+        let nl = if d.ends_with('\n') { "" } else { "\n" };
+        format!("{fence}diff\n{d}{nl}{fence}\n")
+    });
+    let entry = crate::ops::Entry {
+        op,
+        title: name,
+        bullets,
+        trailer: block.as_deref(),
+    };
+    crate::ops::append_entry(&root.join(IMPACT_FILE), IMPACT_TEMPLATE, &entry)
 }
 
 /// Record one use of `name` and how it went.
@@ -480,10 +530,67 @@ pub fn record_use(root: &Path, name: &str, outcome: Outcome, note: Option<&str>)
             Outcome::Failed => "failed",
         }
     )];
-    if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
+    if let Some(n) = note.map(one_line).filter(|n| !n.is_empty()) {
         bullets.push(format!("note: {n}"));
     }
     append_impact(root, "used", name, &bullets, None)
+}
+
+/// Each evidence page as a `[[link]]` to its resolved name.
+fn evidence_links(vault: &Vault, evidence: &[String]) -> Result<Vec<String>> {
+    evidence
+        .iter()
+        .map(|e| {
+            vault
+                .resolve_page(e)
+                .map(|p| format!("[[{}]]", p.stem))
+                .ok_or_else(|| vault.page_not_found(e))
+        })
+        .collect()
+}
+
+/// Paths that differ between `old` and `new`, sorted.
+fn changed_files(old: &Files, new: &Files) -> Vec<String> {
+    old.keys()
+        .chain(new.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|k| old.get(*k) != new.get(*k))
+        // owned: the report outlives the file maps
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Why `SKILL.md` in `files` cannot be loaded as skill `name`: missing,
+/// unparseable, a `name` that is invalid or differs from the folder, or a
+/// missing or overlong `description`. Empty when it is fine.
+fn skill_md_problems(files: &Files, name: &str) -> Vec<String> {
+    let Some(text) = files
+        .get(SKILL_FILE)
+        .and_then(|b| std::str::from_utf8(b).ok())
+    else {
+        return vec!["skill folder has no SKILL.md; agents cannot load it".into()];
+    };
+    let doc = match frontmatter::parse(text) {
+        Ok(d) => d,
+        Err(e) => return vec![format!("SKILL.md frontmatter does not parse: {e}")],
+    };
+    let mut out: Vec<String> = name_problem(name).into_iter().collect();
+    let declared = frontmatter::get_str(&doc.fm, "name").unwrap_or_default();
+    if declared != name {
+        out.push(format!(
+            "`name: {declared}` must match the folder name '{name}'"
+        ));
+    }
+    let description = frontmatter::get_str(&doc.fm, "description").unwrap_or_default();
+    if description.trim().is_empty() {
+        out.push("`description` is empty; agents choose skills by it".into());
+    } else if description.chars().count() > MAX_DESCRIPTION_CHARS {
+        out.push(format!(
+            "`description` is longer than {MAX_DESCRIPTION_CHARS} characters"
+        ));
+    }
+    out
 }
 
 /// Accept or reject the pending proposal for `name`. The diff, reason and
@@ -492,10 +599,12 @@ pub fn record_use(root: &Path, name: &str, outcome: Outcome, note: Option<&str>)
 ///
 /// # Errors
 ///
-/// `skill_not_found` for an unknown skill; `invalid_input` when the reason is
-/// empty or nothing changed; `page_not_found` for unknown evidence;
+/// `skill_not_found` for an unknown skill; `invalid_input` for an invalid
+/// name, an empty reason, no pending change, or (accepting) a `SKILL.md`
+/// agents cannot load; `page_not_found` for unknown evidence;
 /// `already_exists` when an install target holds a skill commonplace did not
-/// install; `io` on read or write failure.
+/// install; `io` on read or write failure. Nothing is recorded or changed
+/// when any of these is returned before the write.
 pub fn decide(
     vault: &Vault,
     name: &str,
@@ -505,36 +614,35 @@ pub fn decide(
 ) -> Result<DecisionReport> {
     let root = &vault.root;
     require_known(root, name)?;
-    let reason = reason.trim();
+    let reason = one_line(reason);
     if reason.is_empty() {
         return Err(Error::invalid_input(
             "give a --reason: the impact record is what stops a rejected idea from being proposed again",
         ));
     }
-    let links = evidence
-        .iter()
-        .map(|e| {
-            vault
-                .resolve_page(e)
-                .map(|p| format!("[[{}]]", p.stem))
-                .ok_or_else(|| vault.page_not_found(e))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let (src, acc) = (source_dir(root, name), accepted_dir(root, name));
-    let (old, new) = (read_files(&acc)?, read_files(&src)?);
+    let links = evidence_links(vault, evidence)?;
+    let snap = Snapshot::read(root, name)?;
+    let (old, new) = (
+        snap.accepted.unwrap_or_default(),
+        snap.source.unwrap_or_default(),
+    );
     if old == new {
         return Err(Error::invalid_input(format!(
             "skill '{name}' has no pending change; edit {SKILLS_DIR}/{name}/ first"
         )));
     }
-    let files: Vec<String> = old
-        .keys()
-        .chain(new.keys())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter(|k| old.get(*k) != new.get(*k))
-        .cloned()
-        .collect();
+    // check everything that can refuse an accept before the record is written
+    if decision == Decision::Accept && !new.is_empty() {
+        let problems = skill_md_problems(&new, name);
+        if !problems.is_empty() {
+            return Err(Error::invalid_input(format!(
+                "{SKILLS_DIR}/{name}/{SKILL_FILE} cannot be loaded by agents: {}",
+                problems.join("; ")
+            )));
+        }
+        check_targets(root, &vault.config, name)?;
+    }
+    let files = changed_files(&old, &new);
     let label = decision.label();
     let mut bullets = vec![format!("reason: {reason}")];
     if !links.is_empty() {
@@ -542,14 +650,14 @@ pub fn decide(
     }
     bullets.push(format!("files: {}", files.join(", ")));
     append_impact(root, label, name, &bullets, Some(&diff_files(&old, &new)))?;
-    crate::ops::log_append(root, "skill", &format!("{label} {name}"), &[reason.into()])?;
+    crate::ops::log_append(root, "skill", &format!("{label} {name}"), &[reason])?;
     let installed = match decision {
         Decision::Accept => {
-            write_files(&acc, &new, false)?;
-            install(root, &vault.config, name)?
+            write_files(&accepted_dir(root, name), &new, false)?;
+            install(root, &vault.config, name, &new)?
         }
         Decision::Reject => {
-            write_files(&src, &old, false)?;
+            write_files(&source_dir(root, name), &old, false)?;
             vec![]
         }
     };
@@ -589,14 +697,39 @@ fn installed_by(dest: &Path, root: &Path) -> bool {
         .is_some_and(|m| dest.starts_with(root) || m.trim() == root.display().to_string())
 }
 
-/// Install the accepted version of `name` into every target, or remove the
-/// installed copies of a retired skill. Returns the folders touched.
-fn install(root: &Path, cfg: &Config, name: &str) -> Result<Vec<String>> {
-    let files = read_files(&accepted_dir(root, name))?;
+/// The install folders for `name`: the project targets, plus the home ones
+/// when it is listed in `[skills] user`.
+fn targets_for(root: &Path, cfg: &Config, name: &str) -> Result<Vec<PathBuf>> {
     let user = cfg.skills.user.iter().any(|u| u == name);
+    Ok(target_bases(root, cfg, user)?
+        .into_iter()
+        .map(|b| b.join(name))
+        .collect())
+}
+
+/// Fail with `already_exists` if any install folder for `name` holds a
+/// skill commonplace did not install, before anything is written.
+fn check_targets(root: &Path, cfg: &Config, name: &str) -> Result<()> {
+    for dest in targets_for(root, cfg, name)? {
+        if dest.exists() && !installed_by(&dest, root) {
+            return Err(Error::already_exists_with(
+                dest.display().to_string(),
+                "a skill commonplace did not install has this name; rename one of them",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Install `files` (the accepted version of `name`) into every target, or
+/// remove the installed copies of a retired skill (`files` empty). Returns
+/// the folders touched.
+fn install(root: &Path, cfg: &Config, name: &str, files: &Files) -> Result<Vec<String>> {
     let mut out = vec![];
-    for base in target_bases(root, cfg, user)? {
-        let dest = base.join(name);
+    if !files.is_empty() {
+        check_targets(root, cfg, name)?;
+    }
+    for dest in targets_for(root, cfg, name)? {
         if files.is_empty() {
             if installed_by(&dest, root) {
                 remove_dir(&dest)?;
@@ -604,13 +737,7 @@ fn install(root: &Path, cfg: &Config, name: &str) -> Result<Vec<String>> {
             }
             continue;
         }
-        if dest.exists() && !installed_by(&dest, root) {
-            return Err(Error::already_exists_with(
-                dest.display().to_string(),
-                "a skill commonplace did not install has this name; rename one of them",
-            ));
-        }
-        write_files(&dest, &files, true)?;
+        write_files(&dest, files, true)?;
         // inside the root the marker's presence is enough; outside it names the owner
         let owner = if dest.starts_with(root) {
             ".".to_string()
@@ -646,21 +773,21 @@ pub fn sync(root: &Path, user: bool, names_wanted: &[String]) -> Result<SyncRepo
         };
         for n in chosen {
             if !cfg.skills.user.contains(n) {
+                // the config owns its list; `n` is borrowed from the caller or `all`
                 cfg.skills.user.push(n.clone());
             }
         }
         cfg.save(root)?;
     }
     let mut rep = SyncReport::default();
-    for name in &all {
-        if matches!(
-            state_of(root, name)?,
-            SkillState::New | SkillState::Changed | SkillState::Removed
-        ) {
-            rep.pending.push(name.clone());
+    for name in all {
+        let snap = Snapshot::read(root, &name)?;
+        let state = snap.state();
+        if let Some(accepted) = &snap.accepted {
+            rep.installed.extend(install(root, &cfg, &name, accepted)?);
         }
-        if accepted_dir(root, name).is_dir() {
-            rep.installed.extend(install(root, &cfg, name)?);
+        if state != SkillState::Accepted {
+            rep.pending.push(name);
         }
     }
     let any_user = !cfg.skills.user.is_empty();
@@ -681,58 +808,16 @@ pub fn sync(root: &Path, user: bool, names_wanted: &[String]) -> Result<SyncRepo
 fn finding(
     severity: Severity,
     rule: &str,
-    path: String,
+    path: &str,
     line: Option<usize>,
     message: String,
 ) -> Finding {
     Finding {
         severity,
         rule: rule.into(),
-        path,
+        path: path.into(),
         line,
         message,
-    }
-}
-
-/// SKILL-001: `SKILL.md` exists and its `name` and `description` follow the Agent Skills rules.
-fn check_skill_md(root: &Path, name: &str, out: &mut Vec<Finding>) {
-    let rel = format!("{SKILLS_DIR}/{name}/{SKILL_FILE}");
-    let mut bad = |message: String| {
-        out.push(finding(
-            Severity::Error,
-            "SKILL-001",
-            rel.clone(),
-            None,
-            message,
-        ));
-    };
-    let Some(text) = read_text(&source_dir(root, name).join(SKILL_FILE)) else {
-        bad("skill folder has no SKILL.md; agents cannot load it".into());
-        return;
-    };
-    let doc = match frontmatter::parse(&text) {
-        Ok(d) => d,
-        Err(e) => {
-            bad(format!("SKILL.md frontmatter does not parse: {e}"));
-            return;
-        }
-    };
-    if let Some(problem) = name_problem(name) {
-        bad(problem);
-    }
-    let declared = frontmatter::get_str(&doc.fm, "name").unwrap_or_default();
-    if declared != name {
-        bad(format!(
-            "`name: {declared}` must match the folder name '{name}'"
-        ));
-    }
-    let description = frontmatter::get_str(&doc.fm, "description").unwrap_or_default();
-    if description.trim().is_empty() {
-        bad("`description` is empty; agents choose skills by it".into());
-    } else if description.chars().count() > MAX_DESCRIPTION_CHARS {
-        bad(format!(
-            "`description` is longer than {MAX_DESCRIPTION_CHARS} characters"
-        ));
     }
 }
 
@@ -742,35 +827,33 @@ fn check_purpose(vault: &Vault, name: &str, out: &mut Vec<Finding>) {
     let dir = source_dir(&vault.root, name);
     let rel = format!("{SKILLS_DIR}/{name}/{PURPOSE_FILE}");
     if !dir.join(PURPOSE_FILE).is_file() {
-        out.push(finding(Severity::Warning, "SKILL-002", rel, None,
+        out.push(finding(Severity::Warning, "SKILL-002", &rel, None,
             "no PURPOSE.md: link the playbooks, error-book entries and concepts this skill was built from".into()));
         return;
     }
     let links = purpose_links(&dir);
     if links.is_empty() {
-        out.push(finding(Severity::Warning, "SKILL-002", rel.clone(), None,
+        out.push(finding(Severity::Warning, "SKILL-002", &rel, None,
             "PURPOSE.md links no wiki pages: a skill without its evidence cannot be revised when the wiki changes".into()));
     }
     for (target, line) in links {
-        match vault.resolve_page(&target) {
-            Some(p) if p.get("status").as_deref() == Some("superseded") => out.push(finding(
+        if let Some(p) = vault.resolve_page(&target)
+            && p.get("status").as_deref() == Some("superseded")
+        {
+            out.push(finding(
                 Severity::Warning,
                 "SKILL-004",
-                rel.clone(),
+                &rel,
                 Some(line),
                 format!("[[{target}]] is superseded; revise the skill against what replaced it"),
-            )),
-            _ => {}
+            ));
         }
     }
 }
 
 /// SKILL-005: wiki links in files agents load, which they cannot follow.
-fn check_self_contained(root: &Path, name: &str, out: &mut Vec<Finding>) {
-    let Ok(files) = read_files(&source_dir(root, name)) else {
-        return;
-    };
-    for (rel, data) in &files {
+fn check_self_contained(name: &str, source: &Files, out: &mut Vec<Finding>) {
+    for (rel, data) in source {
         if rel == PURPOSE_FILE || !fsutil::is_markdown(Path::new(rel)) {
             continue;
         }
@@ -778,62 +861,72 @@ fn check_self_contained(root: &Path, name: &str, out: &mut Vec<Finding>) {
             continue;
         };
         if let Some(l) = markdown::wikilinks(text).first() {
-            out.push(finding(Severity::Warning, "SKILL-005", format!("{SKILLS_DIR}/{name}/{rel}"), Some(l.line),
+            out.push(finding(Severity::Warning, "SKILL-005", &format!("{SKILLS_DIR}/{name}/{rel}"), Some(l.line),
                 format!("[[{}]]: agents using the skill do not read the wiki; copy in what they need and put the link in PURPOSE.md", l.target)));
         }
     }
 }
 
 /// SKILL-006: a proposal waiting for the gate. SKILL-007: an installed copy out of date.
-fn check_state(vault: &Vault, name: &str, out: &mut Vec<Finding>) {
-    let root = &vault.root;
+fn check_state(vault: &Vault, name: &str, snap: &Snapshot, out: &mut Vec<Finding>) {
     let rel = format!("{SKILLS_DIR}/{name}/{SKILL_FILE}");
-    let pending = |what: &str| {
-        finding(
-            Severity::Info,
-            "SKILL-006",
-            rel.clone(),
-            None,
-            format!(
-                "{what}; show it with `commonplace skill diff {name}`, then `skill accept` or `skill reject` it"
-            ),
-        )
-    };
-    match state_of(root, name) {
-        Ok(SkillState::New) => out.push(pending(
-            "new skill not yet accepted, so agents do not have it",
-        )),
-        Ok(SkillState::Changed) => out.push(pending("proposed change not yet accepted")),
-        Ok(SkillState::Removed) => out.push(pending("skill folder deleted; accepting retires it")),
-        Ok(SkillState::Accepted) => {
-            let Ok(mut want) = read_files(&accepted_dir(root, name)) else {
+    let what = match snap.state() {
+        SkillState::New => "new skill not yet accepted, so agents do not have it",
+        SkillState::Changed => "proposed change not yet accepted",
+        SkillState::Removed => "skill folder deleted; accepting retires it",
+        SkillState::Accepted => {
+            let Some(accepted) = &snap.accepted else {
                 return;
             };
-            want.remove(PURPOSE_FILE);
-            let Ok(bases) = target_bases(root, &vault.config, false) else {
+            let Ok(bases) = target_bases(&vault.root, &vault.config, false) else {
                 return;
             };
-            if bases
-                .iter()
-                .any(|b| read_files(&b.join(name)).ok().as_ref() != Some(&want))
-            {
-                out.push(finding(Severity::Warning, "SKILL-007", rel, None,
+            if bases.iter().any(|b| {
+                read_files(&b.join(name))
+                    .map_or(true, |installed| !is_installed_copy(accepted, &installed))
+            }) {
+                out.push(finding(Severity::Warning, "SKILL-007", &rel, None,
                     "installed copy is missing or differs from the accepted version; run `commonplace skill sync`".into()));
             }
+            return;
         }
-        Err(_) => {}
-    }
+    };
+    out.push(finding(
+        Severity::Info,
+        "SKILL-006",
+        &rel,
+        None,
+        format!(
+            "{what}; show it with `commonplace skill diff {name}`, then `skill accept` or `skill reject` it"
+        ),
+    ));
 }
 
-/// Lint every skill (SKILL-001 to SKILL-007).
+/// Whether `installed` is exactly `accepted` without `PURPOSE.md`.
+fn is_installed_copy(accepted: &Files, installed: &Files) -> bool {
+    let for_agents = accepted.len() - usize::from(accepted.contains_key(PURPOSE_FILE));
+    installed.len() == for_agents
+        && installed
+            .iter()
+            .all(|(k, v)| k != PURPOSE_FILE && accepted.get(k) == Some(v))
+}
+
+/// Lint every skill (SKILL-001, 002 and 004 to 007).
 pub(crate) fn lint(vault: &Vault, out: &mut Vec<Finding>) {
     for name in names(&vault.root) {
-        if source_dir(&vault.root, &name).is_dir() {
-            check_skill_md(&vault.root, &name, out);
+        let Ok(snap) = Snapshot::read(&vault.root, &name) else {
+            continue;
+        };
+        if let Some(source) = &snap.source {
+            // SKILL-001: SKILL.md exists and its name and description follow the Agent Skills rules
+            let rel = format!("{SKILLS_DIR}/{name}/{SKILL_FILE}");
+            for problem in skill_md_problems(source, &name) {
+                out.push(finding(Severity::Error, "SKILL-001", &rel, None, problem));
+            }
             check_purpose(vault, &name, out);
-            check_self_contained(&vault.root, &name, out);
+            check_self_contained(&name, source, out);
         }
-        check_state(vault, &name, out);
+        check_state(vault, &name, &snap, out);
     }
 }
 
@@ -861,19 +954,33 @@ mod tests {
     }
 
     #[test]
-    fn only_a_skill_folder_purpose_file_is_a_page() {
+    fn only_folders_with_a_skill_md_are_skills() {
+        let root = std::env::temp_dir().join(format!("cp-skill-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("skills/weekly-review")).unwrap();
+        std::fs::create_dir_all(root.join("skills/cooking")).unwrap();
+        std::fs::write(root.join("skills/weekly-review/SKILL.md"), "x").unwrap();
         assert_eq!(
-            purpose_owner("skills/weekly-review/PURPOSE.md"),
-            Some("weekly-review")
+            skill_file(&root, "skills/weekly-review/PURPOSE.md"),
+            Some(("weekly-review", true))
         );
-        for other in [
-            "skills/weekly-review/SKILL.md",
-            "skills/weekly-review/references/PURPOSE.md",
-            "skills/PURPOSE.md",
+        assert_eq!(
+            skill_file(&root, "skills/weekly-review/SKILL.md"),
+            Some(("weekly-review", false))
+        );
+        for notes in [
+            "skills/cooking/knife-work.md",
+            "skills/rust.md",
             "skillsx/a/PURPOSE.md",
         ] {
-            assert_eq!(purpose_owner(other), None, "{other}");
+            assert_eq!(skill_file(&root, notes), None, "{notes}");
         }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn one_line_flattens_newlines() {
+        assert_eq!(one_line(" a\n\n## [x] used | b \n"), "a ## [x] used | b");
     }
 
     #[test]

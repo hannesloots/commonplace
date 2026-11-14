@@ -323,8 +323,9 @@ pub(crate) fn walk_markdown(root: &Path) -> Vec<PathBuf> {
             if SKIP_FILES.contains(&rel.as_str()) {
                 continue;
             }
-            // under skills/ only PURPOSE.md is a wiki page; SKILL.md is for agents
-            if rel.starts_with("skills/") && crate::skill::purpose_owner(&rel).is_none() {
+            // in a skill folder only PURPOSE.md is a wiki page; SKILL.md and
+            // its references are for agents. Other folders under skills/ are notes.
+            if crate::skill::skill_file(root, &rel).is_some_and(|(_, purpose)| !purpose) {
                 continue;
             }
             out.push(e.path().to_path_buf());
@@ -340,7 +341,10 @@ pub(crate) fn load_page(root: &Path, path: &Path) -> Result<Page> {
     let ptype = frontmatter::get_str(&doc.fm, "type").unwrap_or_default();
     let rel = fsutil::rel(root, path);
     // every skill's PURPOSE.md is named after its skill, so `[[weekly-review]]` links to it
-    let stem = crate::skill::purpose_owner(&rel).map_or_else(|| fsutil::stem(path), str::to_string);
+    let stem = match crate::skill::skill_file(root, &rel) {
+        Some((name, true)) => name.to_string(),
+        _ => fsutil::stem(path),
+    };
     let title = frontmatter::get_str(&doc.fm, "title")
         .or_else(|| markdown::first_h1(&doc.body))
         .unwrap_or_else(|| stem.clone());

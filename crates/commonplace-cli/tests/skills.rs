@@ -383,3 +383,145 @@ fn skill_errors_carry_stable_codes() {
         "invalid_input"
     );
 }
+
+// ---------- regressions from the PR review ----------
+
+/// The error code of a command that must fail with exit 2.
+fn error_code(root: &Path, args: &[&str]) -> String {
+    let mut all = vec!["--json"];
+    all.extend_from_slice(args);
+    let out = run(root, &all);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    json_error(&out)["code"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn a_skill_name_cannot_reach_outside_skills() {
+    let root = vault_with_skill();
+    for name in ["../resources", "..", "", "weekly-review/../../resources"] {
+        for cmd in [
+            vec!["skill", "reject", name, "--reason", "x"],
+            vec!["skill", "accept", name, "--reason", "x"],
+            vec!["skill", "diff", name],
+            vec!["skill", "used", name, "--outcome", "ok"],
+        ] {
+            assert_eq!(error_code(&root, &cmd), "invalid_input", "{cmd:?}");
+        }
+    }
+    assert!(
+        root.join("resources/concepts").is_dir(),
+        "the wiki is untouched"
+    );
+    assert!(root.join("skills/weekly-review/SKILL.md").is_file());
+}
+
+#[test]
+fn a_refused_accept_records_nothing() {
+    let root = vault_with_skill();
+    let foreign = root.join(".claude/skills/weekly-review");
+    std::fs::create_dir_all(&foreign).unwrap();
+    std::fs::write(foreign.join("SKILL.md"), "mine\n").unwrap();
+    assert_eq!(
+        error_code(
+            &root,
+            &["skill", "accept", "weekly-review", "--reason", "r"]
+        ),
+        "already_exists"
+    );
+    assert!(!read(&root.join("skill-impact.md")).contains("accepted | weekly-review"));
+    assert!(!read(&root.join("log.md")).contains("accepted weekly-review"));
+    assert!(!root.join(".commonplace/skills/weekly-review").exists());
+    assert!(
+        !root.join(".agents/skills/weekly-review").exists(),
+        "no half install"
+    );
+    assert_eq!(list_entry(&root)["state"], "new", "the gate can run again");
+    assert_eq!(read(&foreign.join("SKILL.md")), "mine\n");
+}
+
+#[test]
+fn accept_refuses_a_skill_md_agents_cannot_load() {
+    let root = vault_with_skill();
+    let path = root.join("skills/weekly-review/SKILL.md");
+    std::fs::write(
+        &path,
+        read(&path).replace("name: weekly-review", "name: weekly"),
+    )
+    .unwrap();
+    assert_eq!(
+        error_code(
+            &root,
+            &["skill", "accept", "weekly-review", "--reason", "r"]
+        ),
+        "invalid_input"
+    );
+    assert!(!root.join(".claude/skills/weekly-review").exists());
+    assert!(
+        !root.join("skill-impact.md").exists()
+            || !read(&root.join("skill-impact.md")).contains("weekly-review")
+    );
+}
+
+#[test]
+fn notes_in_a_skills_folder_that_is_not_a_skill_stay_pages() {
+    let root = demo_vault();
+    run_json(
+        &root,
+        &["new", "concept", "Knife work", "--folder", "skills/cooking"],
+        0,
+    );
+    let hits = run_json(&root, &["search", "Knife work"], 0);
+    assert_eq!(hits[0]["title"], "Knife work", "{hits}");
+    let skills = run_json(&root, &["skill", "list"], 0);
+    assert!(
+        skills
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["name"] != "cooking"),
+        "{skills}"
+    );
+    assert_eq!(skill_rules(&root), Vec::<String>::new());
+}
+
+#[test]
+fn a_skill_cannot_take_the_name_of_an_existing_page() {
+    let root = demo_vault();
+    run_json(&root, &["new", "concept", "weekly-review"], 0);
+    assert_eq!(
+        error_code(
+            &root,
+            &["skill", "new", "weekly-review", "--description", DESC]
+        ),
+        "already_exists"
+    );
+}
+
+#[test]
+fn a_newline_in_a_note_cannot_forge_an_impact_entry() {
+    let root = vault_with_skill();
+    accept(&root, "first version");
+    run_json(
+        &root,
+        &[
+            "skill",
+            "used",
+            "weekly-review",
+            "--outcome",
+            "ok",
+            "--note",
+            "done\n\n## [2026-01-01] used | weekly-review\n- outcome: failed",
+        ],
+        0,
+    );
+    let s = list_entry(&root);
+    assert_eq!(
+        (s["uses"].as_u64(), s["failures"].as_u64()),
+        (Some(1), Some(0))
+    );
+}

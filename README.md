@@ -38,6 +38,7 @@ plugin.json          portable plugin manifest (Copilot CLI, Codex, other agent-p
 .claude-plugin/      plugin + marketplace manifests (install the repo as a Claude Code plugin)
 hooks/               Stop hook that runs lint/cite verify inside a commonplace
 fixtures/demo  a small commonplace that must lint clean (CI)
+evals/               agent eval cases (`claude plugin eval . --allow-tools Bash Write Edit`)
 docs/                design record and research
 ```
 

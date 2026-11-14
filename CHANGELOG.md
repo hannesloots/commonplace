@@ -32,6 +32,9 @@
   and descriptions are kept on one line.
 - Development: a devcontainer (`.devcontainer/`, Rust toolchain, musl
   target, Claude Code; rootless Podman, no capabilities).
+- Eval cases moved from `skills/commonplace/evals/` to `evals/`, where
+  `claude plugin eval` reads them (it refuses a folder inside `skills/`).
+  They no longer ship inside the skill.
 - The skill's references: new `references/skills.md`, with the loop
   (record use → distil into the wiki → propose one change → user accepts or
   rejects).

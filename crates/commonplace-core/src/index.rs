@@ -27,6 +27,12 @@ fn line_for(p: &Page) -> String {
     let desc = p
         .get("description")
         .filter(|d| !d.trim().is_empty())
+        // a skill's description lives in its SKILL.md, not on the page
+        .or_else(|| {
+            (p.ptype == "skill")
+                .then(|| crate::skill::description_beside(&p.path))
+                .flatten()
+        })
         .unwrap_or_else(|| first_sentence(&p.doc.body));
     let mut extra = vec![];
     if let Some(s) = p.get("status")
@@ -104,7 +110,7 @@ fn is_hub(p: &Page) -> bool {
 }
 
 /// Types with their own group (or deliberately unlisted); any other type gets a "<Type> pages" group.
-const GROUPED_TYPES: [&str; 24] = [
+const GROUPED_TYPES: [&str; 26] = [
     "project",
     "area",
     "person",
@@ -113,6 +119,7 @@ const GROUPED_TYPES: [&str; 24] = [
     "claim",
     "entity",
     "playbook",
+    "skill",
     "synthesis",
     "decision",
     "question",
@@ -129,6 +136,7 @@ const GROUPED_TYPES: [&str; 24] = [
     "profile",
     "preferences",
     "glossary",
+    "skill-impact",
 ];
 
 /// A group of the parseable pages matching `pred`, sorted by stem (case-insensitive).
@@ -162,6 +170,7 @@ fn index_groups(pages: &[Page]) -> Vec<Group> {
         }),
         group("Entities", pages, live("entity")),
         group("Playbooks", pages, live("playbook")),
+        group("Skills", pages, live("skill")),
         group("Syntheses", pages, live("synthesis")),
         group("Decisions", pages, live("decision")),
         group("Open questions", pages, |p| {

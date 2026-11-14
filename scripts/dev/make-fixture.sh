@@ -38,6 +38,43 @@ $B --root $R new requirement "Straight-through onboarding" --folder projects/dem
 sed -i 's/^- `topic\/general` — fallback when nothing more specific fits yet$/- `topic\/general` — fallback when nothing more specific fits yet\n- `topic\/law` — legal research, courts, professional duties/' $R/TAGS.md
 # mark sources summarised with a description
 for f in "$R/sources/notes/"*.md; do sed -i "s/^status: converted$/status: summarised/; s/^description: ''$/description: 'Fixture source'/" "$f"; done
+# a skill compiled from the concept page, accepted and installed
+$B --root $R skill new verify-ai-citations --description "Check every authority an AI tool produced before it goes into a court filing. Use when drafting or reviewing legal work that cites cases."
+cat > "$R/skills/verify-ai-citations/SKILL.md" <<'EOT'
+---
+name: verify-ai-citations
+description: Check every authority an AI tool produced before it goes into a court filing. Use when drafting or reviewing legal work that cites cases.
+---
+
+# Verify AI citations
+
+Courts treat an unverified fake citation as misleading the court, and refer
+counsel to the regulator. Never file an authority you have not opened.
+
+## Steps
+
+1. List every case, statute and quotation in the draft.
+2. Open each one in an official law report or court database.
+3. Check the citation, the paragraph and the quoted words match.
+4. Remove or replace anything you cannot find.
+
+## Checks
+
+Every authority in the draft has a source you opened, noted beside it.
+EOT
+cat > "$R/skills/verify-ai-citations/PURPOSE.md" <<'EOT'
+---
+type: skill
+title: "verify-ai-citations"
+---
+
+# Why Verify AI citations exists
+
+## Motivated by
+
+- [[Fabricated citations breach the duty not to mislead the court]]: why every step exists
+EOT
+$B --root $R skill accept verify-ai-citations --reason "first version, from the Mavundla referral" --evidence "Fabricated citations breach the duty not to mislead the court"
 $B --root $R index >/dev/null
 $B --root $R lint --fail-on error
 rm -rf fixtures/tmp

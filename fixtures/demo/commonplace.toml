@@ -36,3 +36,10 @@ exclude_from_export = [
 
 [review]
 context_lines = 3
+
+[skills]
+targets = [
+    ".claude/skills",
+    ".agents/skills",
+]
+user = []

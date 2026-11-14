@@ -23,6 +23,7 @@ may be null; `suggestions` may be empty). Branch on `code`, never on the message
 |---|---|---|
 | `page_not_found` | no page has that title, alias or path | retry with `suggestions[0]` if it fits, else `search` |
 | `source_not_found` | unknown source id | `source list` for ids |
+| `skill_not_found` | no `skills/<name>/` folder or accepted copy | `skill list` for names, or `skill new` |
 | `text_layer_missing` | the source has no text layer, or the locator is not in it | convert and `source attach-text` |
 | `already_exists` | the target page, file or folder exists | pick another name or edit the existing one |
 | `no_root` | no `commonplace.toml` above the cwd | pass `--root`, or `init` |
@@ -43,6 +44,7 @@ may be null; `suggestions` may be empty). Branch on `code`, never on the message
 - Checks: lint, cite verify/find, links, dedupe
 - Navigation: index, search, query, trace
 - Graph: stats, schema, walk, path, related, hubs, communities, gaps, suggest-links, conflicts, export
+- Skills: new, list, diff, accept, reject, used, sync
 - Reviews and output: review prepare/record, export, log
 - Manual mode
 
@@ -135,6 +137,32 @@ commands include them by default (`--typed-only` to exclude).
 | `commonplace graph suggest-links ["<page>"] [--limit 100]` | unlinked mentions: another page's title or alias in prose (code, comments, existing links, footnotes and headings ignored), with file:line and the sentence. Multi-word names match case-insensitively; a single word only when it has a capital (proper noun or acronym) and matches exactly |
 | `commonplace graph conflicts [--limit 30]` | same-type page pairs sharing sources or subject (title similarity, description overlap, tags) with no recorded contradiction or supersession between them; dates shown. The tool nominates, you read both and judge |
 | `commonplace graph export [--format cypher\|graphml\|mermaid\|dot\|json] [--out file] [--mentions] [--around "<page>" --depth 2]` | the graph for Neo4j (`cypher-shell -f`), Gephi/yEd (GraphML), Obsidian/Markdown (Mermaid, `--around` for a neighbourhood), Graphviz, or JSON |
+
+## Skills
+
+The skills layer: `skills/<name>/SKILL.md` (what agents load) and `PURPOSE.md`
+(the wiki pages behind it). An edit is a proposal until accepted; agents only get
+accepted versions. See [skills.md](skills.md).
+
+| command | does |
+|---|---|
+| `commonplace skill new <name> --description "<what it does; when to use it>"` | create `skills/<name>/` from the templates. Name: 1–64 lowercase letters, digits, single hyphens, not already a page's name. A proposal until accepted. A folder under `skills/` is a skill only when it has a SKILL.md (or an accepted copy); other folders there are ordinary notes |
+| `commonplace skill list` | each skill: `state` (`new`, `accepted`, `changed` = pending proposal, `removed` = source deleted, accept to retire), `purpose` links, `uses`, `failures`, `last_used`, `last_decision` |
+| `commonplace skill diff <name>` | the pending proposal as a unified diff against the accepted version; JSON `{name, pending, diff}`. Show this to the user before the gate |
+| `commonplace skill accept <name> --reason "..." [--evidence "<page>"]...` | refuse (`invalid_input`, nothing recorded) a SKILL.md that fails the SKILL-001 checks, and (`already_exists`) an install folder holding a skill commonplace did not write; otherwise append the diff, reason and evidence to `skill-impact.md` and `log.md`, store it as the accepted version (`.commonplace/skills/<name>/`), install it into `[skills] targets` (default `.claude/skills`, `.agents/skills`; `PURPOSE.md` is not installed). Accepting a deleted skill retires it and removes its installed copies |
+| `commonplace skill reject <name> --reason "..." [--evidence "<page>"]...` | record the same way, then restore the accepted version (a never-accepted skill's folder is removed; its content stays in `skill-impact.md`) |
+| `commonplace skill used <name> --outcome ok\|failed [--note "..."]` | record one use in `skill-impact.md` |
+| `commonplace skill sync [--user] [names...]` | reinstall accepted skills, remove copies of retired ones, list pending proposals. `--user` also installs under the home folder (all skills, or the names given) and remembers them in `[skills] user`. Never overwrites a folder commonplace did not install (`already_exists`) |
+
+Lint: `SKILL-001` (error) SKILL.md missing, or `name`/`description` invalid ·
+`SKILL-002` (warning) PURPOSE.md missing or links nothing · `SKILL-004`
+(warning) a PURPOSE.md link is
+superseded: revise the skill · `SKILL-005` (warning) a `[[link]]` in a file
+agents load · `SKILL-006` (info) a proposal awaits accept/reject · `SKILL-007`
+(warning) an installed copy is missing or edited: `skill sync`. `PURPOSE.md` is
+the skill's wiki page (`type: skill`, named after the skill), so its broken links
+are `LINK-001`, it shows in backlinks, the graph and the index's Skills group, and
+`rename` rewrites its links (in the accepted copy too). `rename` refuses a skill page.
 
 ## Reviews and output
 

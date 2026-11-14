@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 /// mean" suggestion; below this, matches are mostly noise.
 const SUGGESTION_CUTOFF: f64 = 0.8;
 
-/// Folders (relative to root) that are not wiki pages.
 /// Name of the tool-owned folder (manifest, templates, packs, reviews).
 pub(crate) const TOOL_DIR: &str = ".commonplace";
 /// Name used before 0.5.0; a root that has it keeps using it.
@@ -31,6 +30,7 @@ pub fn tool_dir(root: &Path) -> PathBuf {
     cur
 }
 
+/// Folders (relative to root) that are not wiki pages.
 pub(crate) const SKIP_DIRS: &[&str] = &[
     ".commonplace",
     ".brain",
@@ -40,6 +40,9 @@ pub(crate) const SKIP_DIRS: &[&str] = &[
     "sources/raw",
     "sources/text",
     "node_modules",
+    // installed skill copies would otherwise appear as duplicate pages
+    ".claude",
+    ".agents",
 ];
 
 /// Root files that are instructions, not wiki pages.
@@ -320,6 +323,11 @@ pub(crate) fn walk_markdown(root: &Path) -> Vec<PathBuf> {
             if SKIP_FILES.contains(&rel.as_str()) {
                 continue;
             }
+            // in a skill folder only PURPOSE.md is a wiki page; SKILL.md and
+            // its references are for agents. Other folders under skills/ are notes.
+            if crate::skill::skill_file(root, &rel).is_some_and(|(_, purpose)| !purpose) {
+                continue;
+            }
             out.push(e.path().to_path_buf());
         }
     }
@@ -331,7 +339,12 @@ pub(crate) fn load_page(root: &Path, path: &Path) -> Result<Page> {
     let doc =
         frontmatter::parse(&text).map_err(|e| e.in_file(Path::new(&fsutil::rel(root, path))))?;
     let ptype = frontmatter::get_str(&doc.fm, "type").unwrap_or_default();
-    let stem = fsutil::stem(path);
+    let rel = fsutil::rel(root, path);
+    // every skill's PURPOSE.md is named after its skill, so `[[weekly-review]]` links to it
+    let stem = match crate::skill::skill_file(root, &rel) {
+        Some((name, true)) => name.to_string(),
+        _ => fsutil::stem(path),
+    };
     let title = frontmatter::get_str(&doc.fm, "title")
         .or_else(|| markdown::first_h1(&doc.body))
         .unwrap_or_else(|| stem.clone());
@@ -351,7 +364,7 @@ pub(crate) fn load_page(root: &Path, path: &Path) -> Result<Page> {
     }
     let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
     Ok(Page {
-        rel: fsutil::rel(root, path),
+        rel,
         path: path.to_path_buf(),
         stem,
         doc,

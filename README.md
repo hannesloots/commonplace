@@ -17,6 +17,11 @@ works, plus the Rust tool that keeps it honest.
   YAML file), structured comparisons (medical schemes), and
   study/certification, each with types, templates, lint rules, traces and
   reviewer personas, as data.
+- **Skills.** Agent skills compiled from the wiki (`skills/<name>/`), after
+  Google's WikiSkill: raw sources and use records → wiki (playbooks, error
+  book) → skills. The agent proposes one change at a time, you accept or
+  reject, every decision is kept with its diff in `skill-impact.md`, and only
+  accepted skills are installed for Claude Code, Codex and Copilot CLI.
 - **Graph.** The commonplace is a typed graph: `commonplace graph path`, `walk`, `schema`,
   and export to Cypher (Neo4j), GraphML, Mermaid, DOT.
 - **Reviews.** Lint proves structure; persona reviews (citation auditor,
@@ -77,7 +82,9 @@ Then in any folder: "set up a commonplace for my research on X". The skill runs
 `commonplace init`, and the folder gets `AGENTS.md` (the schema), `CLAUDE.md`, and
 the tool-owned `.commonplace/`. Updates: `/plugin update commonplace`.
 
-**As a developer:**
+**As a developer:** open the repository in its devcontainer (`.devcontainer/`:
+the Rust toolchain, the musl target and Claude Code, run rootless with no
+capabilities), or install Rust yourself. Then:
 
 ```
 git clone https://github.com/hannesloots/commonplace && cd commonplace

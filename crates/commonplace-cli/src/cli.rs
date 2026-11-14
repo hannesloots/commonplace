@@ -88,6 +88,11 @@ pub(crate) enum Cmd {
         #[command(subcommand)]
         cmd: PackCmd,
     },
+    /// Agent skills compiled from the wiki: propose, gate (accept/reject), install, record use
+    Skill {
+        #[command(subcommand)]
+        cmd: SkillCmd,
+    },
     /// The commonplace as a typed graph: paths, neighbourhoods, ontology, exports (Cypher/GraphML/Mermaid/DOT/JSON)
     Graph {
         #[command(subcommand)]
@@ -435,6 +440,68 @@ pub(crate) enum PackCmd {
         #[arg(long)]
         jurisdiction: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum SkillCmd {
+    /// Create skills/NAME/ with SKILL.md and PURPOSE.md; a proposal until accepted
+    New {
+        /// Lowercase letters, digits and hyphens, e.g. weekly-review
+        name: String,
+        /// What the skill does and when to use it (agents pick skills by this)
+        #[arg(long)]
+        description: String,
+    },
+    /// Every skill with its state, purpose links and recorded uses
+    List,
+    /// The pending proposal as a unified diff against the accepted version
+    Diff { name: String },
+    /// Keep the pending proposal: record it in skill-impact.md and install it
+    Accept(DecisionArgs),
+    /// Drop the pending proposal: record it in skill-impact.md and restore the accepted version
+    Reject(DecisionArgs),
+    /// Record one use of a skill and how it went
+    Used {
+        name: String,
+        #[arg(long, value_enum)]
+        outcome: OutcomeArg,
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Install accepted skills where agents read them; remove retired ones
+    Sync {
+        /// Also install under the home folder, for every project (all skills, or the names given)
+        #[arg(long)]
+        user: bool,
+        names: Vec<String>,
+    },
+}
+
+#[derive(Args)]
+pub(crate) struct DecisionArgs {
+    pub(crate) name: String,
+    /// Why: what the change fixes or why it was turned down
+    #[arg(long)]
+    pub(crate) reason: String,
+    /// A wiki page the decision rests on (repeatable)
+    #[arg(long)]
+    pub(crate) evidence: Vec<String>,
+}
+
+/// `--outcome` for `skill used`.
+#[derive(Clone, Copy, ValueEnum)]
+pub(crate) enum OutcomeArg {
+    Ok,
+    Failed,
+}
+
+impl From<OutcomeArg> for commonplace_core::skill::Outcome {
+    fn from(o: OutcomeArg) -> Self {
+        match o {
+            OutcomeArg::Ok => Self::Ok,
+            OutcomeArg::Failed => Self::Failed,
+        }
+    }
 }
 
 /// `--direction` for `graph walk` and `graph path`.

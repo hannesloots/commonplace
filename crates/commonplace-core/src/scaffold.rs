@@ -41,6 +41,7 @@ pub(crate) const ROOT_FILES: &[(&str, &str)] = &[
     tpl!("overview.md"),
     tpl!("log.md"),
     tpl!("error-book.md"),
+    ("skill-impact.md", crate::skill::IMPACT_TEMPLATE),
     tpl!("open-questions.md"),
     tpl!("gitignore"),
     tpl!("obsidian-app.json"),
@@ -135,6 +136,7 @@ pub(crate) const DIRS: &[&str] = &[
     "reviews",
     "archive",
     "indexes",
+    "skills",
     ".obsidian",
 ];
 

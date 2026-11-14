@@ -1,7 +1,7 @@
 ---
 type: index
 updated: 2026-11-03
-page_count: 18
+page_count: 20
 ---
 # Index — Demo Commonplace
 
@@ -26,6 +26,9 @@ Start here: [[overview]] for the big picture, [[error-book]] for standing constr
 
 ## Concepts (1)
 - [[Fabricated citations breach the duty not to mislead the court]] — Courts refer counsel to the LPC for fake AI citations
+
+## Skills (1)
+- [[verify-ai-citations]] — Check every authority an AI tool produced before it goes into a court filing. Use when drafting or reviewing legal work that cites cases.
 
 ## Abb pages (1)
 - [[Onboarding Workflow Service]] — Orchestrates onboarding steps

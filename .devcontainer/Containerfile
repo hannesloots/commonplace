@@ -1,0 +1,21 @@
+# Dev environment: the Rust toolchain CI uses (stable, with clippy and
+# rustfmt), the musl target for the release binaries, and Claude Code.
+# No devcontainer features, so no extra capabilities/seccomp get merged in,
+# and no sudo: the container user can't become root.
+FROM docker.io/library/rust:1.100-bookworm
+# musl-tools: `cargo build --target x86_64-unknown-linux-musl` (README, release)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends musl-tools \
+ && rm -rf /var/lib/apt/lists/* \
+ && rustup component add clippy rustfmt \
+ && rustup target add x86_64-unknown-linux-musl
+RUN useradd -m -u 1000 -s /bin/bash vscode
+USER vscode
+# The toolchain stays root-owned in /usr/local/cargo; the registry and git
+# caches go to the user's CARGO_HOME. Native Claude installer: no Node.js.
+# Both dirs are created here so the named volumes mounted over them start
+# out owned by vscode.
+ENV CARGO_HOME=/home/vscode/.cargo
+ENV PATH=/home/vscode/.local/bin:/usr/local/cargo/bin:$PATH
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+ && mkdir -p /home/vscode/.claude /home/vscode/.cargo

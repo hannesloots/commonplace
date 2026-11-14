@@ -6,6 +6,7 @@ pub(crate) mod graph;
 pub(crate) mod pages;
 pub(crate) mod review;
 pub(crate) mod setup;
+pub(crate) mod skill;
 pub(crate) mod source;
 
 use anyhow::Result;

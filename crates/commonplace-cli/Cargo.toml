@@ -3,6 +3,7 @@ name = "commonplace-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 publish = false
 rust-version.workspace = true
 description = "commonplace: deterministic hygiene tools for an LLM-maintained research wiki / second brain"

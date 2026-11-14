@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: skill-from-procedure
+expected_outcome: |
+  A commonplace is initialised with `commonplace init`. The procedure is first written into the wiki: a playbook in resources/playbooks
+  with the four steps, and the forgotten waiting-for list recorded as a pitfall or an error-book entry. Then a skill is created with
+  `commonplace skill new` (a kebab-case name such as weekly-review): skills/<name>/SKILL.md has a description saying what it does and
+  when to use it, the four steps written out with no [[wikilinks]], and skills/<name>/PURPOSE.md links the playbook. The agent shows the
+  user the proposal (`commonplace skill diff` or the content) and asks for approval instead of running `commonplace skill accept` itself.
+  `commonplace lint` reports zero errors and the agent reports the result.

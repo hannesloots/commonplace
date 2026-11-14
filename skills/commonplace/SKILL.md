@@ -77,6 +77,7 @@ here), `index.md`, `overview.md`, `error-book.md`, and the last entries of
 | "clean up", "health check", weekly, after writing | Maintain | [references/maintain.md](references/maintain.md) |
 | "what connects to X", "what is missing", "how do A and B relate", ontology, Neo4j-style questions | Graph (`$COMMONPLACE graph related/path/gaps/communities`) | [references/cli.md § Graph](references/cli.md) |
 | remember a fact, preference, person, decision; daily notes; "what did we decide" | Memory | [references/memory.md](references/memory.md) |
+| "make this a skill", "next time do it like this", a skill was used or went wrong, weekly distil | Skills | [references/skills.md](references/skills.md) |
 | set up, upgrade or understand a commonplace's structure | Schema | [references/schema.md](references/schema.md) |
 | any `commonplace` command, JSON output, exit codes, manual fallback | CLI | [references/cli.md](references/cli.md) |
 
@@ -101,6 +102,7 @@ here), `index.md`, `overview.md`, `error-book.md`, and the last entries of
 - About the user: `memory/` (Profile, Preferences, Glossary, people/, decisions/). Daily notes: `journal/`.
 - Inactive: `archive/` (`$COMMONPLACE archive "<Project>"`). Unresolved: `questions/` and `open-questions.md`.
 - Procedures that worked, including what you learn from the user's courses: `resources/playbooks/`. They are how the commonplace makes both of you more capable next time.
+- Agent skills compiled from the wiki: `skills/<name>/` (SKILL.md + PURPOSE.md). After a task a skill covered, or should have: record the use, distil the lesson into a playbook or the error book, then propose at most one skill change and let the user accept or reject it. Read [references/skills.md](references/skills.md).
 
 ## Packs
 
